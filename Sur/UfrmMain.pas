@@ -9,15 +9,6 @@ uses
   registry,inifiles,Dialogs,
   StrUtils, DB,ComObj,Variants, ScktComp;
 
-type 
-  client_record=record 
-         CHandle: integer; //客户端套接字句柄 
-         CSocket:TCustomWinSocket; //客户端套接字 
-         CName:string; //客户端计算机名称 
-         CAddress:string; //客户端计算机IP地址 
-         CUsed: boolean; //客户端联机标志 
-end; 
-  
 type
   TfrmMain = class(TForm)
     LYTray1: TLYTray;
@@ -46,9 +37,9 @@ type
     ToolButton9: TToolButton;
     OpenDialog1: TOpenDialog;
     ServerSocket1: TServerSocket;
+    SaveDialog1: TSaveDialog;
     procedure N3Click(Sender: TObject);
     procedure FormCreate(Sender: TObject);
-    //增加病人信息表中记录,返回该记录的唯一编号作为检验结果表的外键
     procedure FormClose(Sender: TObject; var Action: TCloseAction);
     procedure N1Click(Sender: TObject);
     procedure ApplicationEvents1Activate(Sender: TObject);
@@ -77,12 +68,9 @@ type
     procedure UpdateConfig;{配置文件生效}
     function LoadInputPassDll:boolean;
     function MakeDBConn:boolean;
-    function DIFF_decode(const Value:string):string;
     function GetSpecNo(const Value:string):string; //取得联机号
   public
     { Public declarations }
-    Session: array[0..10] of client_record; //客户端连接数组
-    Sessions: integer; //客户端连接数
   end;
 
 var
@@ -111,6 +99,7 @@ var
   QuaContSpecNo:string;
   QuaContSpecNoD:string;
   EquipChar:string;
+  ifRecLog:boolean;//是否记录调试日志
 
   RFM:STRING;       //返回数据
   hnd:integer;
@@ -169,6 +158,10 @@ begin
   result := result + 'data source=' + datasource + ';';
   result := result + 'Initial Catalog=' + initialcatalog + ';';
   result := result + 'provider=' + 'SQLOLEDB.1' + ';';
+  //Persist Security Info,表示ADO在数据库连接成功后是否保存密码信息
+  //ADO缺省为True,ADO.net缺省为False
+  //程序中会传ADOConnection信息给TADOLYQuery,故设置为True
+  result := result + 'Persist Security Info=True;';
   if ifIntegrated then
     result := result + 'Integrated Security=SSPI;';
 end;
@@ -247,11 +240,12 @@ var
 begin
   ini:=TINIFILE.Create(ChangeFileExt(Application.ExeName,'.ini'));
 
-  ServerPort:=ini.ReadInteger(IniSection,'服务器端口',8080);
+  ServerPort:=ini.ReadInteger(IniSection,'服务器端口',8080);//DH36的默认端口为5600
 
   autorun:=ini.readBool(IniSection,'开机自动运行',false);
+  ifRecLog:=ini.readBool(IniSection,'调试日志',false);
 
-  GroupName:=trim(ini.ReadString(IniSection,'组别',''));
+  GroupName:=trim(ini.ReadString(IniSection,'工作组',''));
   EquipChar:=trim(uppercase(ini.ReadString(IniSection,'仪器字母','')));//读出来是大写就万无一失了
   SpecType:=ini.ReadString(IniSection,'默认样本类型','');
   SpecStatus:=ini.ReadString(IniSection,'默认样本状态','');
@@ -272,7 +266,7 @@ begin
   try
     ServerSocket1.Open;
   except
-    showmessage('端口打开失败!');
+    showmessage('端口'+inttostr(ServerPort)+'打开失败!');
   end;
 end;
 
@@ -321,20 +315,8 @@ begin
   result:=ls2[2];
   ls2.Free;
   
-  //i:=pos('|',s);
-  //delete(s,1,i);
-  //i:=pos('|',s);
-  //delete(s,1,i);
-  //i:=pos('|',s);
-  //  result:=trim(COPY(s,1,i-1));
-    result:='0000'+result;
-    result:=rightstr(result,4);
-end;
-
-function TfrmMain.DIFF_decode(const Value:string):string;
-begin
-  result:=stringreplace(Value,'#',' ',[rfReplaceAll,rfIgnoreCase]);
-  result:=trim(result);
+  result:='0000'+result;
+  result:=rightstr(result,4);
 end;
 
 function TfrmMain.MakeDBConn:boolean;
@@ -373,13 +355,14 @@ begin
   if LoadInputPassDll then
   begin
     ss:='服务器端口'+#2+'Edit'+#2+#2+'1'+#2+#2+#3+
-      '组别'+#2+'Edit'+#2+#2+'1'+#2+#2+#3+
+      '工作组'+#2+'Edit'+#2+#2+'1'+#2+#2+#3+
       '仪器字母'+#2+'Edit'+#2+#2+'1'+#2+#2+#3+
       '检验系统窗体标题'+#2+'Edit'+#2+#2+'1'+#2+#2+#3+
       '默认样本类型'+#2+'Edit'+#2+#2+'1'+#2+#2+#3+
       '默认样本状态'+#2+'Edit'+#2+#2+'1'+#2+#2+#3+
       '组合项目代码'+#2+'Edit'+#2+#2+'1'+#2+#2+#3+
       '开机自动运行'+#2+'CheckListBox'+#2+#2+'1'+#2+#2+#3+
+      '调试日志'+#2+'CheckListBox'+#2+#2+'0'+#2+'注:强烈建议在正常运行时关闭'+#2+#3+
       '高值质控联机号'+#2+'Edit'+#2+#2+'2'+#2+#2+#3+
       '常值质控联机号'+#2+'Edit'+#2+#2+'2'+#2+#2+#3+
       '低值质控联机号'+#2+'Edit'+#2+#2+'2'+#2+#2;
@@ -396,7 +379,10 @@ end;
 
 procedure TfrmMain.BitBtn1Click(Sender: TObject);
 begin
-  memo1.Lines.SaveToFile('c:\comm.txt');
+  SaveDialog1.DefaultExt := '.txt';
+  SaveDialog1.Filter := 'txt (*.txt)|*.txt';
+  if not SaveDialog1.Execute then exit;
+  memo1.Lines.SaveToFile(SaveDialog1.FileName);
   showmessage('保存成功!');
 end;
 
@@ -454,7 +440,7 @@ begin
     delete(rfm,1,EBPos+1);
 
     SpecNo:=GetSpecNo(rfm2);
-
+    
     ls:=TStringList.Create;
     ExtractStrings([#$D],[],Pchar(rfm2),ls);
 
@@ -468,13 +454,14 @@ begin
       begin
         ls2:=StrToList(ls[i],'|');
         if ls2.Count<6 then begin ls2.Free;continue; end;
-        DtlStr:=ls2[4];
+        DtlStr:=ls2[3];//BS300:4、DH36:3//未做成配置，改代码解决
         sValue:=ls2[5];
         ls2.Free;
       end;
       ReceiveItemInfo[i]:=VarArrayof([DtlStr,sValue,'','']);
 
       //处理重做结果Start
+      //DH36应该不需要重做处理，不过放在这里也没影响
       for  j:=0  to i-1 do
       begin
         if (DtlStr<>'')and(ReceiveItemInfo[j][0]=DtlStr) then ReceiveItemInfo[j]:=VarArrayof(['','','','']);
@@ -490,13 +477,12 @@ begin
         (GroupName),(SpecType),(SpecStatus),(EquipChar),
         (CombinID),'',(LisFormCaption),(ConnectString),
         (QuaContSpecNoG),(QuaContSpecNo),(QuaContSpecNoD),'',
-        true,true,'常规');
+        ifRecLog,true,'常规');
       if not VarIsEmpty(FInts) then FInts:= unAssigned;
     end;
 
     EBPos:=pos(#$1C#$0D,rfm);
   end;
-
 end;
 
 procedure TfrmMain.ServerSocket1ClientConnect(Sender: TObject;
