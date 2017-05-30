@@ -7,8 +7,8 @@ uses
   LYTray, Menus, StdCtrls, Buttons, ADODB,
   ActnList, AppEvnts, ComCtrls, ToolWin, ExtCtrls,
   registry,inifiles,Dialogs,StrUtils, DB,ComObj,Variants,
-  ScktComp,EncdDecd{DecodeStream},Jpeg, IdBaseComponent, IdCoder,
-  IdCoder3to4, IdCoderMIME{TJPEGImage},Graphics,pngimage;
+  ScktComp,EncdDecd{DecodeStream},Jpeg{TJPEGImage}, IdBaseComponent, IdCoder,
+  IdCoder3to4, IdCoderMIME;
 
 type
   TfrmMain = class(TForm)
@@ -394,15 +394,12 @@ var
   i,j:integer;
   Str:string;
   SBPos,EBPos:integer;
-  ls,ls2,ls3:tstrings;
+  ls,ls2,ls3,ls4:tstrings;
   DtlStr:string;
   CheckDate:string;
   sHistogram:string;
   sHistogramFile:string;
   strList:TStrings;
-  
-  png:TPNGObject;
-  bmp:TBitmap;
 begin
   Str:=Socket.ReceiveText;
   if length(memo1.Lines.Text)>=60000 then memo1.Lines.Clear;//memo只能接受64K个字符
@@ -456,31 +453,27 @@ begin
         if (POS('Histogram. BMP',DtlStr)>0)and(ls2.Count>5) then
         begin
           sValue:='';
-          sHistogramFile:=StringReplace(DtlStr,'.','',[rfReplaceAll, rfIgnoreCase])+'.png';
-          try
-            sHistogram:=IdDecoderMIME1.DecodeString(StringReplace(ls2[5],'^Image^PNG^Base64^','',[rfIgnoreCase]));
-          except
-            sHistogramFile:='';
+
+          ls4:=StrToList(ls2[5],'^');//ls2[5]为^Image^PNG^Base64^iVBORw0KGgoAAAANSUhEUgAAAJw.........
+          if ls4.Count>4 then
+          begin
+            sHistogramFile:=DtlStr+'.'+ls4[2];
+          
+            try
+              sHistogram:=IdDecoderMIME1.DecodeString(ls4[4]);
+            except
+              sHistogramFile:='';
+            end;
           end;
+          ls4.Free;
+          
           strList:=TStringlist.Create;
           try
             strList.Add(sHistogram);
-            strList.SaveToFile(sHistogramFile);//DtlStr+'.png'
+            strList.SaveToFile(sHistogramFile);
           finally
             strList.Free;
           end;
-
-          {//PNG->BMP
-          png := TPNGObject.Create;//引入单元pngimage
-          bmp := TBitmap.Create;
-          try
-            png.LoadFromFile(DtlStr+'.png');
-            bmp.Assign(png);
-            BMP.SaveToFile(sHistogramFile);
-          finally
-            FreeAndNil(png);
-            FreeAndNil(bmp);
-          end;//}
         end;
         //直方图处理 stop
         
