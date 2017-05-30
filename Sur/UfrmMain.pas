@@ -6,8 +6,9 @@ uses
   Windows, Messages, SysUtils, Classes, Controls, Forms,
   LYTray, Menus, StdCtrls, Buttons, ADODB,
   ActnList, AppEvnts, ComCtrls, ToolWin, ExtCtrls,
-  registry,inifiles,Dialogs,
-  StrUtils, DB,ComObj,Variants, ScktComp;
+  registry,inifiles,Dialogs,StrUtils, DB,ComObj,Variants,
+  ScktComp,EncdDecd{DecodeStream},Jpeg, IdBaseComponent, IdCoder,
+  IdCoder3to4, IdCoderMIME{TJPEGImage},Graphics,pngimage;
 
 type
   TfrmMain = class(TForm)
@@ -38,6 +39,7 @@ type
     OpenDialog1: TOpenDialog;
     ServerSocket1: TServerSocket;
     SaveDialog1: TSaveDialog;
+    IdDecoderMIME1: TIdDecoderMIME;
     procedure N3Click(Sender: TObject);
     procedure FormCreate(Sender: TObject);
     procedure FormClose(Sender: TObject; var Action: TCloseAction);
@@ -68,7 +70,7 @@ type
     procedure UpdateConfig;{配置文件生效}
     function LoadInputPassDll:boolean;
     function MakeDBConn:boolean;
-    function GetSpecNo(const Value:string):string; //取得联机号
+    //function GetSpecNo(const Value:string):string; //取得联机号
   public
     { Public declarations }
   end;
@@ -100,6 +102,7 @@ var
   QuaContSpecNoD:string;
   EquipChar:string;
   ifRecLog:boolean;//是否记录调试日志
+  NoDtlStr:integer;//联机标识位
 
   RFM:STRING;       //返回数据
   hnd:integer;
@@ -241,6 +244,7 @@ begin
   ini:=TINIFILE.Create(ChangeFileExt(Application.ExeName,'.ini'));
 
   ServerPort:=ini.ReadInteger(IniSection,'服务器端口',8080);//DH36的默认端口为5600
+  NoDtlStr:=ini.ReadInteger(IniSection,'联机标识位',3);//BS300:4、DH36:3
 
   autorun:=ini.readBool(IniSection,'开机自动运行',false);
   ifRecLog:=ini.readBool(IniSection,'调试日志',false);
@@ -288,37 +292,6 @@ begin
     result:=passflag;
 end;
 
-function TfrmMain.GetSpecNo(const Value:string):string; //取得联机号
-VAR
-  i:integer;
-  s:string;
-  ls2:tstrings;
-begin
-  i:=pos('OBR|',uppercase(Value));
-  if i<=0 then
-  begin
-    result:=formatdatetime('nnss',now);
-    exit;
-  end;
-  
-  s:=Value;
-  delete(s,1,i+3);
-
-  ls2:=StrToList(s,'|');
-  if ls2.Count<3 then
-  begin
-    result:=formatdatetime('nnss',now);
-    ls2.Free;
-    exit;
-  end;
-  
-  result:=ls2[2];
-  ls2.Free;
-  
-  result:='0000'+result;
-  result:=rightstr(result,4);
-end;
-
 function TfrmMain.MakeDBConn:boolean;
 var
   newconnstr,ss: string;
@@ -355,6 +328,7 @@ begin
   if LoadInputPassDll then
   begin
     ss:='服务器端口'+#2+'Edit'+#2+#2+'1'+#2+#2+#3+
+      '联机标识位'+#2+'Edit'+#2+#2+'1'+#2+'OBX行用垂线分隔,从0开始,第几位'+#2+#3+
       '工作组'+#2+'Edit'+#2+#2+'1'+#2+#2+#3+
       '仪器字母'+#2+'Edit'+#2+#2+'1'+#2+#2+#3+
       '检验系统窗体标题'+#2+'Edit'+#2+#2+'1'+#2+#2+#3+
@@ -420,8 +394,15 @@ var
   i,j:integer;
   Str:string;
   SBPos,EBPos:integer;
-  ls,ls2:tstrings;
+  ls,ls2,ls3:tstrings;
   DtlStr:string;
+  CheckDate:string;
+  sHistogram:string;
+  sHistogramFile:string;
+  strList:TStrings;
+  
+  png:TPNGObject;
+  bmp:TBitmap;
 begin
   Str:=Socket.ReceiveText;
   if length(memo1.Lines.Text)>=60000 then memo1.Lines.Clear;//memo只能接受64K个字符
@@ -439,8 +420,8 @@ begin
     rfm2:=copy(rfm,1,EBPos+1);//1个标本结果
     delete(rfm,1,EBPos+1);
 
-    SpecNo:=GetSpecNo(rfm2);
-    
+    SpecNo:=formatdatetime('nnss',now);
+
     ls:=TStringList.Create;
     ExtractStrings([#$D],[],Pchar(rfm2),ls);
 
@@ -448,17 +429,64 @@ begin
 
     for  i:=0  to ls.Count-1 do
     begin
+      if uppercase(copy(trim(ls[i]),1,4))='OBR|' then
+      begin
+        ls3:=StrToList(ls[i],'|');
+
+        if ls3.Count>3 then SpecNo:=rightstr('0000'+ls3[3],4);
+
+        if ls3.Count>7 then
+          CheckDate:=copy(ls3[7],1,4)+'-'+copy(ls3[7],5,2)+'-'+copy(ls3[7],7,2)+' '+copy(ls3[7],9,2)+ifThen(copy(ls3[7],9,2)<>'',':')+copy(ls3[7],11,2);
+        ls3.Free;
+      end;
+      
       DtlStr:='';
       sValue:='';
+      sHistogramFile:='';
       if uppercase(copy(trim(ls[i]),1,4))='OBX|' then
       begin
         ls2:=StrToList(ls[i],'|');
-        if ls2.Count<6 then begin ls2.Free;continue; end;
-        DtlStr:=ls2[3];//BS300:4、DH36:3//未做成配置，改代码解决
-        sValue:=ls2[5];
+        if(ls2.Count>5)and(ls2.Count>NoDtlStr)then
+        begin
+          DtlStr:=ls2[NoDtlStr];
+          sValue:=ls2[5];
+        end;
+
+        //直方图处理 start
+        if (POS('Histogram. BMP',DtlStr)>0)and(ls2.Count>5) then
+        begin
+          sValue:='';
+          sHistogramFile:=DtlStr+'.bmp';
+          try
+            sHistogram:=IdDecoderMIME1.DecodeString(StringReplace(ls2[5],'^Image^PNG^Base64^','',[rfIgnoreCase]));
+          except
+            sHistogramFile:='';
+          end;
+          strList:=TStringlist.Create;
+          try
+            strList.Add(sHistogram);
+            strList.SaveToFile(DtlStr+'.png');
+          finally
+            strList.Free;
+          end;
+
+          //PNG->BMP
+          png := TPNGObject.Create;//引入单元pngimage
+          bmp := TBitmap.Create;
+          try
+            png.LoadFromFile(DtlStr+'.png');
+            bmp.Assign(png);
+            BMP.SaveToFile(sHistogramFile);
+          finally
+            FreeAndNil(png);
+            FreeAndNil(bmp);
+          end;//}
+        end;
+        //直方图处理 stop
+        
         ls2.Free;
       end;
-      ReceiveItemInfo[i]:=VarArrayof([DtlStr,sValue,'','']);
+      ReceiveItemInfo[i]:=VarArrayof([DtlStr,sValue,'',sHistogramFile]);
 
       //处理重做结果Start
       //DH36应该不需要重做处理，不过放在这里也没影响
@@ -470,10 +498,12 @@ begin
     end;
     ls.Free;
 
+    //EXIT;
+
     if bRegister then
     begin
       FInts :=CreateOleObject('Data2LisSvr.Data2Lis');
-      FInts.fData2Lis(ReceiveItemInfo,(SpecNo),'',
+      FInts.fData2Lis(ReceiveItemInfo,(SpecNo),CheckDate,
         (GroupName),(SpecType),(SpecStatus),(EquipChar),
         (CombinID),'',(LisFormCaption),(ConnectString),
         (QuaContSpecNoG),(QuaContSpecNo),(QuaContSpecNoD),'',

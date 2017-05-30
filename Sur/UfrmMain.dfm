@@ -328,4 +328,9 @@ object frmMain: TfrmMain
     Left = 272
     Top = 26
   end
+  object IdDecoderMIME1: TIdDecoderMIME
+    FillChar = '='
+    Left = 176
+    Top = 104
+  end
 end
