@@ -456,7 +456,7 @@ begin
         if (POS('Histogram. BMP',DtlStr)>0)and(ls2.Count>5) then
         begin
           sValue:='';
-          sHistogramFile:=DtlStr+'.bmp';
+          sHistogramFile:=StringReplace(DtlStr,'.','',[rfReplaceAll, rfIgnoreCase])+'.png';
           try
             sHistogram:=IdDecoderMIME1.DecodeString(StringReplace(ls2[5],'^Image^PNG^Base64^','',[rfIgnoreCase]));
           except
@@ -465,12 +465,12 @@ begin
           strList:=TStringlist.Create;
           try
             strList.Add(sHistogram);
-            strList.SaveToFile(DtlStr+'.png');
+            strList.SaveToFile(sHistogramFile);//DtlStr+'.png'
           finally
             strList.Free;
           end;
 
-          //PNG->BMP
+          {//PNG->BMP
           png := TPNGObject.Create;//引入单元pngimage
           bmp := TBitmap.Create;
           try
@@ -497,8 +497,6 @@ begin
       //处理重做结果End
     end;
     ls.Free;
-
-    //EXIT;
 
     if bRegister then
     begin
