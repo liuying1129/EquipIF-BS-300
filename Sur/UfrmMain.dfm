@@ -343,4 +343,10 @@ object frmMain: TfrmMain
     Left = 288
     Top = 104
   end
+  object Timer1: TTimer
+    Enabled = False
+    OnTimer = Timer1Timer
+    Left = 320
+    Top = 104
+  end
 end

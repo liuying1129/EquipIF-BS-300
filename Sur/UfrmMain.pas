@@ -41,6 +41,7 @@ type
     SaveDialog1: TSaveDialog;
     IdDecoderMIME1: TIdDecoderMIME;
     ClientSocket1: TClientSocket;
+    Timer1: TTimer;
     procedure N3Click(Sender: TObject);
     procedure FormCreate(Sender: TObject);
     procedure FormClose(Sender: TObject; var Action: TCloseAction);
@@ -71,6 +72,7 @@ type
       Socket: TCustomWinSocket);
     procedure ClientSocket1Error(Sender: TObject; Socket: TCustomWinSocket;
       ErrorEvent: TErrorEvent; var ErrorCode: Integer);
+    procedure Timer1Timer(Sender: TObject);
   private
     { Private declarations }
     procedure WMSyscommand(var message:TWMMouse);message WM_SYSCOMMAND;
@@ -111,7 +113,6 @@ var
   ifRecLog:boolean;//是否记录调试日志
   NoDtlStr:integer;//联机标识位
   ifSocketClient:boolean;
-  ServerIP:string;
 
   RFM:STRING;       //返回数据
   hnd:integer;
@@ -249,6 +250,7 @@ var
   INI:tinifile;
   autorun:boolean;
   ServerPort:integer;
+  ServerIP:string;
 begin
   ini:=TINIFILE.Create(ChangeFileExt(Application.ExeName,'.ini'));
 
@@ -284,6 +286,8 @@ begin
   if ifSocketClient then
   begin
     ClientSocket1.Host:=ServerIP;
+    Timer1.Interval:=5000;
+    Timer1.Enabled:=true;
     try
       ClientSocket1.Open;
     except
@@ -583,6 +587,18 @@ procedure TfrmMain.ClientSocket1Error(Sender: TObject;
 begin
   Memo1.Lines.Add('与服务器端'+Socket.RemoteHost+'('+Socket.RemoteAddress+')的连接发生错误');
   ErrorCode := 0;
+end;
+
+procedure TfrmMain.Timer1Timer(Sender: TObject);
+begin
+  if not ifSocketClient then exit;
+  if ClientSocket1.Active then exit;
+
+  try
+    ClientSocket1.Open;
+  except
+    showmessage('连接服务器失败!');
+  end;
 end;
 
 initialization
