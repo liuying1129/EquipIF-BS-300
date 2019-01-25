@@ -339,7 +339,6 @@ object frmMain: TfrmMain
     Port = 0
     OnConnect = ClientSocket1Connect
     OnDisconnect = ClientSocket1Disconnect
-    OnRead = ClientSocket1Read
     OnError = ClientSocket1Error
     Left = 288
     Top = 104
