@@ -40,6 +40,7 @@ type
     ServerSocket1: TServerSocket;
     SaveDialog1: TSaveDialog;
     IdDecoderMIME1: TIdDecoderMIME;
+    ClientSocket1: TClientSocket;
     procedure N3Click(Sender: TObject);
     procedure FormCreate(Sender: TObject);
     procedure FormClose(Sender: TObject; var Action: TCloseAction);
@@ -64,6 +65,13 @@ type
       var ClientSocket: TServerClientWinSocket);
     procedure ServerSocket1Listen(Sender: TObject;
       Socket: TCustomWinSocket);
+    procedure ClientSocket1Connect(Sender: TObject;
+      Socket: TCustomWinSocket);
+    procedure ClientSocket1Disconnect(Sender: TObject;
+      Socket: TCustomWinSocket);
+    procedure ClientSocket1Error(Sender: TObject; Socket: TCustomWinSocket;
+      ErrorEvent: TErrorEvent; var ErrorCode: Integer);
+    procedure ClientSocket1Read(Sender: TObject; Socket: TCustomWinSocket);
   private
     { Private declarations }
     procedure WMSyscommand(var message:TWMMouse);message WM_SYSCOMMAND;
@@ -103,6 +111,8 @@ var
   EquipChar:string;
   ifRecLog:boolean;//是否记录调试日志
   NoDtlStr:integer;//联机标识位
+  ifSocketClient:boolean;
+  ServerIP:string;
 
   RFM:STRING;       //返回数据
   hnd:integer;
@@ -243,8 +253,10 @@ var
 begin
   ini:=TINIFILE.Create(ChangeFileExt(Application.ExeName,'.ini'));
 
+  ifSocketClient:=ini.readBool(IniSection,'Socket客户端',false);//BC-10:客户端
+  ServerIP:=trim(ini.ReadString(IniSection,'服务器IP',''));
   ServerPort:=ini.ReadInteger(IniSection,'服务器端口',8080);//DH36的默认端口为5600
-  NoDtlStr:=ini.ReadInteger(IniSection,'联机标识位',3);//BS300:4、DH36:3
+  NoDtlStr:=ini.ReadInteger(IniSection,'联机标识位',3);//BS300:4;DH36、BC-10:3
 
   autorun:=ini.readBool(IniSection,'开机自动运行',false);
   ifRecLog:=ini.readBool(IniSection,'调试日志',false);
@@ -267,10 +279,23 @@ begin
 
   ServerSocket1.Close;
   ServerSocket1.Port:=ServerPort;
-  try
-    ServerSocket1.Open;
-  except
-    showmessage('端口'+inttostr(ServerPort)+'打开失败!');
+  ClientSocket1.Close;
+  ClientSocket1.Port:=ServerPort;
+  if ifSocketClient then
+  begin
+    ClientSocket1.Host:=ServerIP;
+    try
+      ClientSocket1.Open;
+    except
+      showmessage('连接服务器'+ServerIP+'('+inttostr(ServerPort)+')失败!');
+    end;
+  end else
+  begin
+    try
+      ServerSocket1.Open;
+    except
+      showmessage('端口'+inttostr(ServerPort)+'打开失败!');
+    end;
   end;
 end;
 
@@ -327,7 +352,9 @@ var
 begin
   if LoadInputPassDll then
   begin
-    ss:='服务器端口'+#2+'Edit'+#2+#2+'1'+#2+#2+#3+
+    ss:='Socket客户端'+#2+'CheckListBox'+#2+#2+'1'+#2+#2+#3+
+      '服务器IP'+#2+'Edit'+#2+#2+'1'+#2+'上位机通信接口程序为服务器端时无需填写'+#2+#3+
+      '服务器端口'+#2+'Edit'+#2+#2+'1'+#2+#2+#3+
       '联机标识位'+#2+'Edit'+#2+#2+'1'+#2+'OBX行用垂线分隔,从0开始,第几位'+#2+#3+
       '工作组'+#2+'Edit'+#2+#2+'1'+#2+#2+#3+
       '仪器字母'+#2+'Edit'+#2+#2+'1'+#2+#2+#3+
@@ -401,6 +428,7 @@ var
   sHistogramFile:string;
   strList:TStrings;
 begin
+  //与ClientSocket1Read代码一模一样
   Str:=Socket.ReceiveText;
   if length(memo1.Lines.Text)>=60000 then memo1.Lines.Clear;//memo只能接受64K个字符
   memo1.Lines.Add(Str);
@@ -536,6 +564,150 @@ procedure TfrmMain.ServerSocket1Listen(Sender: TObject;
   Socket: TCustomWinSocket);
 begin
   //Memo1.Lines.Add('等待客户端连接...');
+end;
+
+procedure TfrmMain.ClientSocket1Connect(Sender: TObject;
+  Socket: TCustomWinSocket);
+begin
+  Memo1.Lines.Add('已经连接到'+Socket.RemoteHost+'('+Socket.RemoteAddress+')');
+end;
+
+procedure TfrmMain.ClientSocket1Disconnect(Sender: TObject;
+  Socket: TCustomWinSocket);
+begin
+  Memo1.Lines.Add('已经断开与'+Socket.RemoteHost+'('+Socket.RemoteAddress+')的连接');
+end;
+
+procedure TfrmMain.ClientSocket1Error(Sender: TObject;
+  Socket: TCustomWinSocket; ErrorEvent: TErrorEvent;
+  var ErrorCode: Integer);
+begin
+  Memo1.Lines.Add('与服务器端'+Socket.RemoteHost+'('+Socket.RemoteAddress+')的连接发生错误');
+  ErrorCode := 0;
+end;
+
+procedure TfrmMain.ClientSocket1Read(Sender: TObject;
+  Socket: TCustomWinSocket);
+var
+  SpecNo:string;
+  rfm2:string;
+  sValue:string;
+  FInts:OleVariant;
+  ReceiveItemInfo:OleVariant;
+  i,j:integer;
+  Str:string;
+  SBPos,EBPos:integer;
+  ls,ls2,ls3,ls4:tstrings;
+  DtlStr:string;
+  CheckDate:string;
+  sHistogram:string;
+  sHistogramFile:string;
+  strList:TStrings;
+begin
+  //与ServerSocket1ClientRead代码一模一样
+  Str:=Socket.ReceiveText;
+  if length(memo1.Lines.Text)>=60000 then memo1.Lines.Clear;//memo只能接受64K个字符
+  memo1.Lines.Add(Str);
+
+  rfm:=rfm+Str;
+  
+  SBPos:=pos(#$0B,rfm);
+  if SBPos<=0 then exit;
+  delete(rfm,1,SBPos-1);//保持头是第一个字符
+
+  EBPos:=pos(#$1C#$0D,rfm);
+  while EBPos>0 do
+  begin
+    rfm2:=copy(rfm,1,EBPos+1);//1个标本结果
+    delete(rfm,1,EBPos+1);
+
+    SpecNo:=formatdatetime('nnss',now);
+
+    ls:=TStringList.Create;
+    ExtractStrings([#$D],[],Pchar(rfm2),ls);
+
+    ReceiveItemInfo:=VarArrayCreate([0,ls.Count-1],varVariant);
+
+    for  i:=0  to ls.Count-1 do
+    begin
+      if uppercase(copy(trim(ls[i]),1,4))='OBR|' then
+      begin
+        ls3:=StrToList(ls[i],'|');
+
+        if ls3.Count>3 then SpecNo:=rightstr('0000'+ls3[3],4);
+
+        if ls3.Count>7 then
+          CheckDate:=copy(ls3[7],1,4)+'-'+copy(ls3[7],5,2)+'-'+copy(ls3[7],7,2)+' '+copy(ls3[7],9,2)+ifThen(copy(ls3[7],9,2)<>'',':')+copy(ls3[7],11,2);
+        ls3.Free;
+      end;
+      
+      DtlStr:='';
+      sValue:='';
+      sHistogramFile:='';
+      if uppercase(copy(trim(ls[i]),1,4))='OBX|' then
+      begin
+        ls2:=StrToList(ls[i],'|');
+        if(ls2.Count>5)and(ls2.Count>NoDtlStr)then
+        begin
+          DtlStr:=ls2[NoDtlStr];
+          sValue:=ls2[5];
+        end;
+
+        //直方图处理 start
+        if (POS('Histogram. BMP',DtlStr)>0)and(ls2.Count>5) then
+        begin
+          sValue:='';
+
+          ls4:=StrToList(ls2[5],'^');//ls2[5]为^Image^PNG^Base64^iVBORw0KGgoAAAANSUhEUgAAAJw.........
+          if ls4.Count>4 then
+          begin
+            sHistogramFile:=DtlStr+'.'+ls4[2];
+          
+            try
+              sHistogram:=IdDecoderMIME1.DecodeString(ls4[4]);
+            except
+              sHistogramFile:='';
+            end;
+          end;
+          ls4.Free;
+          
+          strList:=TStringlist.Create;
+          try
+            strList.Add(sHistogram);
+            strList.SaveToFile(sHistogramFile);
+          finally
+            strList.Free;
+          end;
+        end;
+        //直方图处理 stop
+        
+        ls2.Free;
+      end;
+      ReceiveItemInfo[i]:=VarArrayof([DtlStr,sValue,'',sHistogramFile]);
+
+      //处理重做结果Start
+      //DH36应该不需要重做处理，不过放在这里也没影响
+      for  j:=0  to i-1 do
+      begin
+        if (DtlStr<>'')and(ReceiveItemInfo[j][0]=DtlStr) then ReceiveItemInfo[j]:=VarArrayof(['','','','']);
+      end;
+      //处理重做结果End
+    end;
+    ls.Free;
+
+    if bRegister then
+    begin
+      FInts :=CreateOleObject('Data2LisSvr.Data2Lis');
+      FInts.fData2Lis(ReceiveItemInfo,(SpecNo),CheckDate,
+        (GroupName),(SpecType),(SpecStatus),(EquipChar),
+        (CombinID),'',(LisFormCaption),(ConnectString),
+        (QuaContSpecNoG),(QuaContSpecNo),(QuaContSpecNoD),'',
+        ifRecLog,true,'常规');
+      if not VarIsEmpty(FInts) then FInts:= unAssigned;
+    end;
+
+    EBPos:=pos(#$1C#$0D,rfm);
+  end;
 end;
 
 initialization

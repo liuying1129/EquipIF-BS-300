@@ -333,4 +333,15 @@ object frmMain: TfrmMain
     Left = 176
     Top = 104
   end
+  object ClientSocket1: TClientSocket
+    Active = False
+    ClientType = ctNonBlocking
+    Port = 0
+    OnConnect = ClientSocket1Connect
+    OnDisconnect = ClientSocket1Disconnect
+    OnRead = ClientSocket1Read
+    OnError = ClientSocket1Error
+    Left = 288
+    Top = 104
+  end
 end
