@@ -1,0 +1,9 @@
+1. 在Window下运下hl7_test_server.exe
+
+点开 receive text按键，将弹出一个界口。
+
+2. 在BG800仪器中，对hl7服务器设置，运行hl7_test_server.exe程序的IP地址。端口设为 6178
+   连接成功后，测样时，即可自运传送数据到hl7_test_server.exe程序中。内容将与连接协议一致。
+  如： MSH｜^~\&|Medicong\\\\20130530104611|....
+	PID｜123||123456||tom|.....
+	OBR||1........
