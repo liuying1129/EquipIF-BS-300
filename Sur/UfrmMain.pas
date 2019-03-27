@@ -113,6 +113,7 @@ var
   ifRecLog:boolean;//是否记录调试日志
   NoDtlStr:integer;//联机标识位
   ifSocketClient:boolean;
+  ifKLite8:boolean;
 
   RFM:STRING;       //返回数据
   hnd:integer;
@@ -261,6 +262,7 @@ begin
 
   autorun:=ini.readBool(IniSection,'开机自动运行',false);
   ifRecLog:=ini.readBool(IniSection,'调试日志',false);
+  ifKLite8:=ini.readBool(IniSection,'KLite8响应',false);
 
   GroupName:=trim(ini.ReadString(IniSection,'工作组',''));
   EquipChar:=trim(uppercase(ini.ReadString(IniSection,'仪器字母','')));//读出来是大写就万无一失了
@@ -368,6 +370,7 @@ begin
       '组合项目代码'+#2+'Edit'+#2+#2+'1'+#2+#2+#3+
       '开机自动运行'+#2+'CheckListBox'+#2+#2+'1'+#2+#2+#3+
       '调试日志'+#2+'CheckListBox'+#2+#2+'0'+#2+'注:强烈建议在正常运行时关闭'+#2+#3+
+      'KLite8响应'+#2+'CheckListBox'+#2+#2+'1'+#2+#2+#3+
       '高值质控联机号'+#2+'Edit'+#2+#2+'2'+#2+#2+#3+
       '常值质控联机号'+#2+'Edit'+#2+#2+'2'+#2+#2+#3+
       '低值质控联机号'+#2+'Edit'+#2+#2+'2'+#2+#2;
@@ -425,12 +428,13 @@ var
   i,j:integer;
   Str:string;
   SBPos,EBPos:integer;
-  ls,ls2,ls3,ls4:tstrings;
+  ls,ls2,ls3,ls4,ls5:tstrings;
   DtlStr:string;
   CheckDate:string;
   sHistogram:string;
   sHistogramFile:string;
   strList:TStrings;
+  Message_Control_ID:string;
 begin
   Str:=Socket.ReceiveText;
   if length(memo1.Lines.Text)>=60000 then memo1.Lines.Clear;//memo只能接受64K个字符
@@ -457,6 +461,13 @@ begin
 
     for  i:=0  to ls.Count-1 do
     begin
+      if uppercase(copy(trim(ls[i]),1,4))='MSH|' then
+      begin
+        ls5:=StrToList(ls[i],'|');
+        if ls5.Count>9 then Message_Control_ID:=ls5[9];
+        ls5.Free;
+      end;
+      
       if uppercase(copy(trim(ls[i]),1,4))='OBR|' then
       begin
         ls3:=StrToList(ls[i],'|');
@@ -534,6 +545,12 @@ begin
     end;
 
     EBPos:=pos(#$1C#$0D,rfm);
+    
+    if ifKLite8 then
+    begin
+      Socket.SendText(#$0B+'MSH|^~$&|||||||ACK^R01|1|P|2.4||||0||ASCII|||'+#$0D+'MSA|AA|'+Message_Control_ID+'|message accepted|||0|'+#$0D#$1C#$0D);
+    end;
+    
   end;
 end;
 
