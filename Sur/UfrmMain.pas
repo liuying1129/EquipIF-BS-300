@@ -114,6 +114,7 @@ var
   NoDtlStr:integer;//联机标识位
   ifSocketClient:boolean;
   ifKLite8:boolean;
+  KLite8_Patient_ID:boolean;
 
   RFM:STRING;       //返回数据
   hnd:integer;
@@ -263,6 +264,7 @@ begin
   autorun:=ini.readBool(IniSection,'开机自动运行',false);
   ifRecLog:=ini.readBool(IniSection,'调试日志',false);
   ifKLite8:=ini.readBool(IniSection,'KLite8响应',false);
+  KLite8_Patient_ID:=ini.readBool(IniSection,'KLite8联机号',false);
 
   GroupName:=trim(ini.ReadString(IniSection,'工作组',''));
   EquipChar:=trim(uppercase(ini.ReadString(IniSection,'仪器字母','')));//读出来是大写就万无一失了
@@ -371,6 +373,7 @@ begin
       '开机自动运行'+#2+'CheckListBox'+#2+#2+'1'+#2+#2+#3+
       '调试日志'+#2+'CheckListBox'+#2+#2+'0'+#2+'注:强烈建议在正常运行时关闭'+#2+#3+
       'KLite8响应'+#2+'CheckListBox'+#2+#2+'1'+#2+#2+#3+
+      'KLite8联机号'+#2+'CheckListBox'+#2+#2+'1'+#2+#2+#3+
       '高值质控联机号'+#2+'Edit'+#2+#2+'2'+#2+#2+#3+
       '常值质控联机号'+#2+'Edit'+#2+#2+'2'+#2+#2+#3+
       '低值质控联机号'+#2+'Edit'+#2+#2+'2'+#2+#2;
@@ -473,6 +476,11 @@ begin
         ls3:=StrToList(ls[i],'|');
 
         if ls3.Count>3 then SpecNo:=rightstr('0000'+ls3[3],4);
+
+        if KLite8_Patient_ID and(ls3.Count>2) then
+        begin
+          SpecNo:=rightstr('0000'+StringReplace(ls3[2],'^R','',[rfReplaceAll, rfIgnoreCase]),4);
+        end;
 
         if ls3.Count>7 then
           CheckDate:=copy(ls3[7],1,4)+'-'+copy(ls3[7],5,2)+'-'+copy(ls3[7],7,2)+' '+copy(ls3[7],9,2)+ifThen(copy(ls3[7],9,2)<>'',':')+copy(ls3[7],11,2);
