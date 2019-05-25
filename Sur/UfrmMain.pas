@@ -491,6 +491,7 @@ begin
       
       DtlStr:='';
       sValue:='';
+      sHistogramString:='';
       sHistogramFile:='';
       if uppercase(copy(trim(ls[i]),1,4))='OBX|' then
       begin
@@ -536,8 +537,17 @@ begin
           sValue:='';
           sHistogramFile:='';
 
+          //对于PLT图像内容的选取：
+          //2900P程序3.64.xxxx以后的版本
+          //3020/3000P程序4.64.xxxx以后的版本
+          //3060/3080/3081程序6.65.xxxx以后的版本
+          //2960/2980/2981程序5.65.xxxx以后的版本
+          //都只取PLT图形内容的前100个字节；在上述之前的版本，取前128个字节
+
           ls4:=StrToList(ls2[5],'^');//ls2[5]为^Histogram^32Byte^HEX^00000000000000000.........
-          if ls4.Count>4 then sHistogramString:=DIFF_decode(ls4[4]);
+          sHistogramTemp:=ls4[4];
+          if 'PLTHistogram'=DtlStr then sHistogramTemp:=copy(sHistogramTemp,1,200);//默认共128个字节256个字符
+          if ls4.Count>4 then sHistogramString:=DIFF_decode(sHistogramTemp);
           ls4.Free;
         end;
         //直方图处理 stop
