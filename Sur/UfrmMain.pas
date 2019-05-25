@@ -79,6 +79,7 @@ type
     procedure UpdateConfig;{配置文件生效}
     function LoadInputPassDll:boolean;
     function MakeDBConn:boolean;
+    function DIFF_decode(const ASTMField:string):string;
     //function GetSpecNo(const Value:string):string; //取得联机号
   public
     { Public declarations }
@@ -434,7 +435,8 @@ var
   ls,ls2,ls3,ls4,ls5:tstrings;
   DtlStr:string;
   CheckDate:string;
-  sHistogram:string;
+  sHistogramTemp:string;
+  sHistogramString:string;
   sHistogramFile:string;
   strList:TStrings;
   Message_Control_ID:string;
@@ -499,10 +501,11 @@ begin
           sValue:=ls2[5];
         end;
 
-        //直方图处理 start
+        //直方图处理 start DH36
         if (POS('Histogram. BMP',DtlStr)>0)and(ls2.Count>5) then
         begin
           sValue:='';
+          sHistogramString:='';
 
           ls4:=StrToList(ls2[5],'^');//ls2[5]为^Image^PNG^Base64^iVBORw0KGgoAAAANSUhEUgAAAJw.........
           if ls4.Count>4 then
@@ -510,7 +513,7 @@ begin
             sHistogramFile:=DtlStr+'.'+ls4[2];
           
             try
-              sHistogram:=IdDecoderMIME1.DecodeString(ls4[4]);
+              sHistogramTemp:=IdDecoderMIME1.DecodeString(ls4[4]);
             except
               sHistogramFile:='';
             end;
@@ -519,17 +522,29 @@ begin
           
           strList:=TStringlist.Create;
           try
-            strList.Add(sHistogram);
+            strList.Add(sHistogramTemp);
             strList.SaveToFile(sHistogramFile);
           finally
             strList.Free;
           end;
         end;
         //直方图处理 stop
+
+        //直方图处理 start URIT-2980
+        if (('WBCHistogram'=DtlStr)or('RBCHistogram'=DtlStr)or('PLTHistogram'=DtlStr))and(ls2.Count>5) then
+        begin
+          sValue:='';
+          sHistogramFile:='';
+
+          ls4:=StrToList(ls2[5],'^');//ls2[5]为^Histogram^32Byte^HEX^00000000000000000.........
+          if ls4.Count>4 then sHistogramString:=DIFF_decode(ls4[4]);
+          ls4.Free;
+        end;
+        //直方图处理 stop
         
         ls2.Free;
       end;
-      ReceiveItemInfo[i]:=VarArrayof([DtlStr,sValue,'',sHistogramFile]);
+      ReceiveItemInfo[i]:=VarArrayof([DtlStr,sValue,sHistogramString,sHistogramFile]);
 
       //处理重做结果Start
       //DH36应该不需要重做处理，不过放在这里也没影响
@@ -624,6 +639,28 @@ begin
   except
     showmessage('连接服务器失败!');
   end;
+end;
+
+function TfrmMain.DIFF_decode(const ASTMField: string): string;
+var
+  sList:TStrings;
+  ss:string;
+  i:integer;
+begin
+  ss:=ASTMField;
+  
+  sList:=TStringList.Create;
+  while length(ss)>=2 do
+  begin
+    sList.Add(copy(ss,1,2));
+    delete(ss,1,2);
+  end;
+  for i :=0  to sList.Count-1 do
+  begin
+    result:=result+' '+inttostr(strtoint('$'+sList[i]));
+  end;
+  sList.Free;
+  result:=trim(result);
 end;
 
 initialization
