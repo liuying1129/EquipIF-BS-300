@@ -79,8 +79,6 @@ type
     procedure UpdateConfig;{配置文件生效}
     function LoadInputPassDll:boolean;
     function MakeDBConn:boolean;
-    function DIFF_decode(const ASTMField:string):string;
-    //function GetSpecNo(const Value:string):string; //取得联机号
   public
     { Public declarations }
   end;
@@ -436,7 +434,6 @@ var
   DtlStr:string;
   CheckDate:string;
   sHistogramTemp:string;
-  sHistogramString:string;
   sHistogramFile:string;
   strList:TStrings;
   Message_Control_ID:string;
@@ -491,7 +488,6 @@ begin
       
       DtlStr:='';
       sValue:='';
-      sHistogramString:='';
       sHistogramFile:='';
       if uppercase(copy(trim(ls[i]),1,4))='OBX|' then
       begin
@@ -506,7 +502,6 @@ begin
         if (POS('Histogram. BMP',DtlStr)>0)and(ls2.Count>5) then
         begin
           sValue:='';
-          sHistogramString:='';
 
           ls4:=StrToList(ls2[5],'^');//ls2[5]为^Image^PNG^Base64^iVBORw0KGgoAAAANSUhEUgAAAJw.........
           if ls4.Count>4 then
@@ -531,30 +526,9 @@ begin
         end;
         //直方图处理 stop
 
-        //直方图处理 start URIT-2980
-        if (('WBCHistogram'=DtlStr)or('RBCHistogram'=DtlStr)or('PLTHistogram'=DtlStr))and(ls2.Count>5) then
-        begin
-          sValue:='';
-          sHistogramFile:='';
-
-          //对于PLT图像内容的选取：
-          //2900P程序3.64.xxxx以后的版本
-          //3020/3000P程序4.64.xxxx以后的版本
-          //3060/3080/3081程序6.65.xxxx以后的版本
-          //2960/2980/2981程序5.65.xxxx以后的版本
-          //都只取PLT图形内容的前100个字节；在上述之前的版本，取前128个字节
-
-          ls4:=StrToList(ls2[5],'^');//ls2[5]为^Histogram^32Byte^HEX^00000000000000000.........
-          sHistogramTemp:=ls4[4];
-          if 'PLTHistogram'=DtlStr then sHistogramTemp:=copy(sHistogramTemp,1,200);//默认共128个字节256个字符
-          if ls4.Count>4 then sHistogramString:=DIFF_decode(sHistogramTemp);
-          ls4.Free;
-        end;
-        //直方图处理 stop
-        
         ls2.Free;
       end;
-      ReceiveItemInfo[i]:=VarArrayof([DtlStr,sValue,sHistogramString,sHistogramFile]);
+      ReceiveItemInfo[i]:=VarArrayof([DtlStr,sValue,'',sHistogramFile]);
 
       //处理重做结果Start
       //DH36应该不需要重做处理，不过放在这里也没影响
@@ -649,28 +623,6 @@ begin
   except
     showmessage('连接服务器失败!');
   end;
-end;
-
-function TfrmMain.DIFF_decode(const ASTMField: string): string;
-var
-  sList:TStrings;
-  ss:string;
-  i:integer;
-begin
-  ss:=ASTMField;
-  
-  sList:=TStringList.Create;
-  while length(ss)>=2 do
-  begin
-    sList.Add(copy(ss,1,2));
-    delete(ss,1,2);
-  end;
-  for i :=0  to sList.Count-1 do
-  begin
-    result:=result+' '+inttostr(strtoint('$'+sList[i]));
-  end;
-  sList.Free;
-  result:=trim(result);
 end;
 
 initialization
