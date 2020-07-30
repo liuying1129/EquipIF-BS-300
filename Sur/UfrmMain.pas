@@ -110,6 +110,7 @@ var
   QuaContSpecNoD:string;
   EquipChar:string;
   ifRecLog:boolean;//是否记录调试日志
+  EquipUnid:integer;//设备唯一编号
   NoDtlStr:integer;//联机标识位
   ifSocketClient:boolean;
   ifKLite8:boolean;
@@ -262,6 +263,7 @@ begin
 
   autorun:=ini.readBool(IniSection,'开机自动运行',false);
   ifRecLog:=ini.readBool(IniSection,'调试日志',false);
+  EquipUnid:=ini.ReadInteger(IniSection,'设备唯一编号',-1);
   ifKLite8:=ini.readBool(IniSection,'KLite8响应',false);
   KLite8_Patient_ID:=ini.readBool(IniSection,'KLite8联机号',false);
 
@@ -371,6 +373,7 @@ begin
       '组合项目代码'+#2+'Edit'+#2+#2+'1'+#2+#2+#3+
       '开机自动运行'+#2+'CheckListBox'+#2+#2+'1'+#2+#2+#3+
       '调试日志'+#2+'CheckListBox'+#2+#2+'0'+#2+'注:强烈建议在正常运行时关闭'+#2+#3+
+      '设备唯一编号'+#2+'Edit'+#2+#2+'1'+#2+#2+#3+
       'KLite8响应'+#2+'CheckListBox'+#2+#2+'1'+#2+#2+#3+
       'KLite8联机号'+#2+'CheckListBox'+#2+#2+'1'+#2+#2+#3+
       '高值质控联机号'+#2+'Edit'+#2+#2+'2'+#2+#2+#3+
@@ -547,7 +550,13 @@ begin
         (GroupName),(SpecType),(SpecStatus),(EquipChar),
         (CombinID),'',(LisFormCaption),(ConnectString),
         (QuaContSpecNoG),(QuaContSpecNo),(QuaContSpecNoD),'',
-        ifRecLog,true,'常规');
+        ifRecLog,true,'常规',
+        '',
+        EquipUnid,
+        '','','','',
+        -1,-1,-1,-1,
+        -1,-1,-1,-1,
+        false,false,false,false);
       if not VarIsEmpty(FInts) then FInts:= unAssigned;
     end;
 
