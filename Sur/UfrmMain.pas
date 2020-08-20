@@ -442,6 +442,8 @@ var
   Message_Control_ID:string;
 begin
   Str:=Socket.ReceiveText;
+  Str:=UTF8Decode(Str);//解决中文乱码//飞测FS-205
+  
   if length(memo1.Lines.Text)>=60000 then memo1.Lines.Clear;//memo只能接受64K个字符
   memo1.Lines.Add(Str);
 
@@ -499,6 +501,8 @@ begin
         begin
           DtlStr:=ls2[NoDtlStr];
           sValue:=ls2[5];
+          sValue:=StringReplace(sValue,'↑','',[rfReplaceAll, rfIgnoreCase]);//飞测FS-205
+          sValue:=StringReplace(sValue,'↓','',[rfReplaceAll, rfIgnoreCase]);//飞测FS-205
         end;
 
         //直方图处理 start DH36
