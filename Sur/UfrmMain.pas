@@ -115,6 +115,7 @@ var
   ifSocketClient:boolean;
   ifKLite8:boolean;
   KLite8_Patient_ID:boolean;
+  FS205_SpecType:boolean;
 
   RFM:STRING;       //返回数据
   hnd:integer;
@@ -266,6 +267,7 @@ begin
   EquipUnid:=ini.ReadInteger(IniSection,'设备唯一编号',-1);
   ifKLite8:=ini.readBool(IniSection,'KLite8响应',false);
   KLite8_Patient_ID:=ini.readBool(IniSection,'KLite8联机号',false);
+  FS205_SpecType:=ini.readBool(IniSection,'FS205样本类型',false);
 
   GroupName:=trim(ini.ReadString(IniSection,'工作组',''));
   EquipChar:=trim(uppercase(ini.ReadString(IniSection,'仪器字母','')));//读出来是大写就万无一失了
@@ -376,6 +378,7 @@ begin
       '设备唯一编号'+#2+'Edit'+#2+#2+'1'+#2+#2+#3+
       'KLite8响应'+#2+'CheckListBox'+#2+#2+'1'+#2+#2+#3+
       'KLite8联机号'+#2+'CheckListBox'+#2+#2+'1'+#2+#2+#3+
+      'FS205样本类型'+#2+'CheckListBox'+#2+#2+'1'+#2+#2+#3+
       '高值质控联机号'+#2+'Edit'+#2+#2+'2'+#2+#2+#3+
       '常值质控联机号'+#2+'Edit'+#2+#2+'2'+#2+#2+#3+
       '低值质控联机号'+#2+'Edit'+#2+#2+'2'+#2+#2;
@@ -488,6 +491,9 @@ begin
 
         if ls3.Count>7 then
           CheckDate:=copy(ls3[7],1,4)+'-'+copy(ls3[7],5,2)+'-'+copy(ls3[7],7,2)+' '+copy(ls3[7],9,2)+ifThen(copy(ls3[7],9,2)<>'',':')+copy(ls3[7],11,2);
+
+        if FS205_SpecType and(ls3.Count>15) then SpecType:=ls3[15];
+        
         ls3.Free;
       end;
       
