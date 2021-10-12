@@ -486,7 +486,7 @@ begin
 
         if KLite8_Patient_ID and(ls3.Count>2) then
         begin
-          SpecNo:=rightstr('0000'+StringReplace(ls3[2],'^R','',[rfReplaceAll, rfIgnoreCase]),4);
+          SpecNo:=rightstr('0000'+trim(StringReplace(ls3[2],'^R','',[rfReplaceAll, rfIgnoreCase])),4);
         end;
 
         if ls3.Count>7 then
