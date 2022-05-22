@@ -114,8 +114,13 @@ var
   NoDtlStr:integer;//联机标识位
   ifSocketClient:boolean;
   ifKLite8:boolean;
+  DH36_Patient_ID:boolean;
   KLite8_Patient_ID:boolean;
+  FUS2000_Patient_ID:boolean;
   FS205_SpecType:boolean;
+  FUS2000_Graph:boolean;//FUS2000图形
+  FS205_Chinese:boolean;
+  BS300_Rerun:boolean;
 
   RFM:STRING;       //返回数据
   hnd:integer;
@@ -266,8 +271,13 @@ begin
   ifRecLog:=ini.readBool(IniSection,'调试日志',false);
   EquipUnid:=ini.ReadInteger(IniSection,'设备唯一编号',-1);
   ifKLite8:=ini.readBool(IniSection,'KLite8响应',false);
+  DH36_Patient_ID:=ini.readBool(IniSection,'DH36联机号',false);
   KLite8_Patient_ID:=ini.readBool(IniSection,'KLite8联机号',false);
+  FUS2000_Patient_ID:=ini.readBool(IniSection,'FUS2000联机号',false);
   FS205_SpecType:=ini.readBool(IniSection,'FS205样本类型',false);
+  FUS2000_Graph:=ini.readBool(IniSection,'FUS2000图形',false);
+  FS205_Chinese:=ini.readBool(IniSection,'处理FS205中文乱码',false);
+  BS300_Rerun:=ini.readBool(IniSection,'处理BS300重做',false);
 
   GroupName:=trim(ini.ReadString(IniSection,'工作组',''));
   EquipChar:=trim(uppercase(ini.ReadString(IniSection,'仪器字母','')));//读出来是大写就万无一失了
@@ -377,8 +387,14 @@ begin
       '调试日志'+#2+'CheckListBox'+#2+#2+'0'+#2+'注:强烈建议在正常运行时关闭'+#2+#3+
       '设备唯一编号'+#2+'Edit'+#2+#2+'1'+#2+#2+#3+
       'KLite8响应'+#2+'CheckListBox'+#2+#2+'1'+#2+#2+#3+
+      //2022-5-21新增.以前默认该获取联机号方式.故以前项目的该小蝴蝶升级,可能需勾选该选项
+      'DH36联机号'+#2+'CheckListBox'+#2+#2+'1'+#2+#2+#3+
       'KLite8联机号'+#2+'CheckListBox'+#2+#2+'1'+#2+#2+#3+
+      'FUS2000联机号'+#2+'CheckListBox'+#2+#2+'1'+#2+#2+#3+
       'FS205样本类型'+#2+'CheckListBox'+#2+#2+'1'+#2+#2+#3+
+      'FUS2000图形'+#2+'CheckListBox'+#2+#2+'1'+#2+#2+#3+
+      '处理FS205中文乱码'+#2+'CheckListBox'+#2+#2+'1'+#2+#2+#3+
+      '处理BS300重做'+#2+'CheckListBox'+#2+#2+'1'+#2+#2+#3+
       '高值质控联机号'+#2+'Edit'+#2+#2+'2'+#2+#2+#3+
       '常值质控联机号'+#2+'Edit'+#2+#2+'2'+#2+#2+#3+
       '低值质控联机号'+#2+'Edit'+#2+#2+'2'+#2+#2;
@@ -436,7 +452,7 @@ var
   i,j:integer;
   Str:string;
   SBPos,EBPos:integer;
-  ls,ls2,ls3,ls4,ls5:tstrings;
+  ls,ls2,ls3,ls4,ls5,ls6,ls7:tstrings;
   DtlStr:string;
   CheckDate:string;
   sHistogramTemp:string;
@@ -445,7 +461,7 @@ var
   Message_Control_ID:string;
 begin
   Str:=Socket.ReceiveText;
-  Str:=UTF8Decode(Str);//解决中文乱码//飞测FS-205
+  if FS205_Chinese then Str:=UTF8Decode(Str);//解决【飞测FS-205】中文乱码问题
   
   if length(memo1.Lines.Text)>=60000 then memo1.Lines.Clear;//memo只能接受64K个字符
   memo1.Lines.Add(Str);
@@ -478,16 +494,22 @@ begin
         ls5.Free;
       end;
       
+      if uppercase(copy(trim(ls[i]),1,4))='PID|' then
+      begin
+        ls6:=StrToList(ls[i],'|');
+        
+        if FUS2000_Patient_ID and(ls6.Count>3) then SpecNo:=rightstr('0000'+ls6[3],4);
+
+        ls6.Free;
+      end;
+      
       if uppercase(copy(trim(ls[i]),1,4))='OBR|' then
       begin
         ls3:=StrToList(ls[i],'|');
 
-        if ls3.Count>3 then SpecNo:=rightstr('0000'+ls3[3],4);
+        if DH36_Patient_ID and(ls3.Count>3) then SpecNo:=rightstr('0000'+ls3[3],4);
 
-        if KLite8_Patient_ID and(ls3.Count>2) then
-        begin
-          SpecNo:=rightstr('0000'+trim(StringReplace(ls3[2],'^R','',[rfReplaceAll, rfIgnoreCase])),4);
-        end;
+        if KLite8_Patient_ID and(ls3.Count>2) then SpecNo:=rightstr('0000'+trim(StringReplace(ls3[2],'^R','',[rfReplaceAll, rfIgnoreCase])),4);
 
         if ls3.Count>7 then
           CheckDate:=copy(ls3[7],1,4)+'-'+copy(ls3[7],5,2)+'-'+copy(ls3[7],7,2)+' '+copy(ls3[7],9,2)+ifThen(copy(ls3[7],9,2)<>'',':')+copy(ls3[7],11,2);
@@ -496,7 +518,7 @@ begin
         
         ls3.Free;
       end;
-      
+
       DtlStr:='';
       sValue:='';
       sHistogramFile:='';
@@ -509,6 +531,33 @@ begin
           sValue:=ls2[5];
           sValue:=StringReplace(sValue,'↑','',[rfReplaceAll, rfIgnoreCase]);//飞测FS-205
           sValue:=StringReplace(sValue,'↓','',[rfReplaceAll, rfIgnoreCase]);//飞测FS-205
+
+          //FUS2000
+          ls7:=StrToList(sValue,'^');
+          if ls7.Count>2 then sValue:=trim(ls7[1]+' '+ls7[2]);
+          ls7.Free;
+        end;
+
+        //FUS2000尿沉渣图片
+        if FUS2000_Graph and(ls2[2]='ED')and(ls2.Count>5) then
+        begin
+          sValue:='';
+
+          sHistogramFile:=ls2[3]+'.bmp';
+
+          try
+            sHistogramTemp:=IdDecoderMIME1.DecodeString(ls2[5]);
+          except
+            sHistogramFile:='';
+          end;
+
+          strList:=TStringlist.Create;
+          try
+            strList.Add(sHistogramTemp);
+            strList.SaveToFile(sHistogramFile);
+          finally
+            strList.Free;
+          end;
         end;
 
         //直方图处理 start DH36
@@ -544,10 +593,12 @@ begin
       ReceiveItemInfo[i]:=VarArrayof([DtlStr,sValue,'',sHistogramFile]);
 
       //处理重做结果Start
-      //DH36应该不需要重做处理，不过放在这里也没影响
-      for  j:=0  to i-1 do
+      if BS300_Rerun then
       begin
-        if (DtlStr<>'')and(ReceiveItemInfo[j][0]=DtlStr) then ReceiveItemInfo[j]:=VarArrayof(['','','','']);
+        for  j:=0  to i-1 do
+        begin
+          if (DtlStr<>'')and(ReceiveItemInfo[j][0]=DtlStr) then ReceiveItemInfo[j]:=VarArrayof(['','','','']);
+        end;
       end;
       //处理重做结果End
     end;
