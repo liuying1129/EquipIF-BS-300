@@ -114,9 +114,8 @@ var
   NoDtlStr:integer;//联机标识位
   ifSocketClient:boolean;
   ifKLite8:boolean;
-  DH36_Patient_ID:boolean;
-  KLite8_Patient_ID:boolean;
-  FUS2000_Patient_ID:boolean;
+  Line_Patient_ID:String;
+  No_Patient_ID:integer;
   FS205_SpecType:boolean;
   FUS2000_Graph:boolean;//FUS2000图形
   FS205_Chinese:boolean;
@@ -271,12 +270,12 @@ begin
   ifRecLog:=ini.readBool(IniSection,'调试日志',false);
   EquipUnid:=ini.ReadInteger(IniSection,'设备唯一编号',-1);
   ifKLite8:=ini.readBool(IniSection,'KLite8响应',false);
-  DH36_Patient_ID:=ini.readBool(IniSection,'DH36联机号',false);
-  KLite8_Patient_ID:=ini.readBool(IniSection,'KLite8联机号',false);
-  FUS2000_Patient_ID:=ini.readBool(IniSection,'FUS2000联机号',false);
+  Line_Patient_ID:=ini.ReadString(IniSection,'联机号所在行','');
+  No_Patient_ID:=ini.ReadInteger(IniSection,'联机号标识位',3);
+
   FS205_SpecType:=ini.readBool(IniSection,'FS205样本类型',false);
   FUS2000_Graph:=ini.readBool(IniSection,'FUS2000图形',false);
-  FS205_Chinese:=ini.readBool(IniSection,'处理FS205中文乱码',false);
+  FS205_Chinese:=ini.readBool(IniSection,'中文乱码解码',false);
   BS300_Rerun:=ini.readBool(IniSection,'处理BS300重做',false);
 
   GroupName:=trim(ini.ReadString(IniSection,'工作组',''));
@@ -387,13 +386,11 @@ begin
       '调试日志'+#2+'CheckListBox'+#2+#2+'0'+#2+'注:强烈建议在正常运行时关闭'+#2+#3+
       '设备唯一编号'+#2+'Edit'+#2+#2+'1'+#2+#2+#3+
       'KLite8响应'+#2+'CheckListBox'+#2+#2+'1'+#2+#2+#3+
-      //2022-5-21新增.以前默认该获取联机号方式.故以前项目的该小蝴蝶升级,可能需勾选该选项
-      'DH36联机号'+#2+'CheckListBox'+#2+#2+'1'+#2+#2+#3+
-      'KLite8联机号'+#2+'CheckListBox'+#2+#2+'1'+#2+#2+#3+
-      'FUS2000联机号'+#2+'CheckListBox'+#2+#2+'1'+#2+#2+#3+
+      '联机号所在行'+#2+'Combobox'+#2+'PID'+#13+'OBR'+#2+'1'+#2+#2+#3+
+      '联机号标识位'+#2+'Edit'+#2+#2+'1'+#2+'PID或OBR行用垂线分隔,从0开始,第几位'+#2+#3+
       'FS205样本类型'+#2+'CheckListBox'+#2+#2+'1'+#2+#2+#3+
       'FUS2000图形'+#2+'CheckListBox'+#2+#2+'1'+#2+#2+#3+
-      '处理FS205中文乱码'+#2+'CheckListBox'+#2+#2+'1'+#2+#2+#3+
+      '中文乱码解码'+#2+'CheckListBox'+#2+#2+'1'+#2+#2+#3+
       '处理BS300重做'+#2+'CheckListBox'+#2+#2+'1'+#2+#2+#3+
       '高值质控联机号'+#2+'Edit'+#2+#2+'2'+#2+#2+#3+
       '常值质控联机号'+#2+'Edit'+#2+#2+'2'+#2+#2+#3+
@@ -452,7 +449,7 @@ var
   i,j:integer;
   Str:string;
   SBPos,EBPos:integer;
-  ls,ls2,ls3,ls4,ls5,ls6,ls7:tstrings;
+  ls,ls2,ls3,ls4,ls5,ls7,ls8:tstrings;
   DtlStr:string;
   CheckDate:string;
   sHistogramTemp:string;
@@ -478,11 +475,11 @@ begin
     rfm2:=copy(rfm,1,EBPos+1);//1个标本结果
     delete(rfm,1,EBPos+1);
 
-    SpecNo:=formatdatetime('nnss',now);
-
     ls:=TStringList.Create;
     ExtractStrings([#$D],[],Pchar(rfm2),ls);
 
+    SpecNo:='';
+          
     ReceiveItemInfo:=VarArrayCreate([0,ls.Count-1],varVariant);
 
     for  i:=0  to ls.Count-1 do
@@ -493,29 +490,19 @@ begin
         if ls5.Count>9 then Message_Control_ID:=ls5[9];
         ls5.Free;
       end;
-      
+
       if uppercase(copy(trim(ls[i]),1,4))='PID|' then
       begin
-        ls6:=StrToList(ls[i],'|');
-        
-        if FUS2000_Patient_ID and(ls6.Count>3) then SpecNo:=rightstr('0000'+ls6[3],4);
-
-        ls6.Free;
+        if Line_Patient_ID='PID' then SpecNo:=ls[i];
       end;
       
       if uppercase(copy(trim(ls[i]),1,4))='OBR|' then
       begin
+        if Line_Patient_ID='OBR' then SpecNo:=ls[i];
+
         ls3:=StrToList(ls[i],'|');
-
-        if DH36_Patient_ID and(ls3.Count>3) then SpecNo:=rightstr('0000'+ls3[3],4);
-
-        if KLite8_Patient_ID and(ls3.Count>2) then SpecNo:=rightstr('0000'+trim(StringReplace(ls3[2],'^R','',[rfReplaceAll, rfIgnoreCase])),4);
-
-        if ls3.Count>7 then
-          CheckDate:=copy(ls3[7],1,4)+'-'+copy(ls3[7],5,2)+'-'+copy(ls3[7],7,2)+' '+copy(ls3[7],9,2)+ifThen(copy(ls3[7],9,2)<>'',':')+copy(ls3[7],11,2);
-
+        if ls3.Count>7 then CheckDate:=copy(ls3[7],1,4)+'-'+copy(ls3[7],5,2)+'-'+copy(ls3[7],7,2)+' '+copy(ls3[7],9,2)+ifThen(copy(ls3[7],9,2)<>'',':')+copy(ls3[7],11,2);
         if FS205_SpecType and(ls3.Count>15) then SpecType:=ls3[15];
-        
         ls3.Free;
       end;
 
@@ -603,6 +590,15 @@ begin
       //处理重做结果End
     end;
     ls.Free;
+
+    //联机号begin
+    ls8:=StrToList(SpecNo,'|');
+    if ls8.Count>No_Patient_ID then SpecNo:=ls8[No_Patient_ID];
+    ls8.Free;
+    SpecNo:=trim(StringReplace(SpecNo,'^R','',[rfReplaceAll, rfIgnoreCase]));//KLite8
+    if SpecNo='' then SpecNo:=formatdatetime('nnss',now);
+    SpecNo:=rightstr('0000'+SpecNo,4);
+    //联机号end
 
     if bRegister then
     begin
