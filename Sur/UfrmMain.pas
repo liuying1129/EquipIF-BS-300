@@ -116,7 +116,6 @@ var
   ifKLite8:boolean;
   Line_Patient_ID:String;
   No_Patient_ID:integer;
-  FS205_SpecType:boolean;
   FUS2000_Graph:boolean;//FUS2000图形
   FS205_Chinese:boolean;
   BS300_Rerun:boolean;
@@ -273,7 +272,6 @@ begin
   Line_Patient_ID:=ini.ReadString(IniSection,'联机号所在行','');
   No_Patient_ID:=ini.ReadInteger(IniSection,'联机号标识位',3);
 
-  FS205_SpecType:=ini.readBool(IniSection,'FS205样本类型',false);
   FUS2000_Graph:=ini.readBool(IniSection,'FUS2000图形',false);
   FS205_Chinese:=ini.readBool(IniSection,'中文乱码解码',false);
   BS300_Rerun:=ini.readBool(IniSection,'处理BS300重做',false);
@@ -379,7 +377,7 @@ begin
       '工作组'+#2+'Edit'+#2+#2+'1'+#2+#2+#3+
       '仪器字母'+#2+'Edit'+#2+#2+'1'+#2+#2+#3+
       '检验系统窗体标题'+#2+'Edit'+#2+#2+'1'+#2+#2+#3+
-      '默认样本类型'+#2+'Edit'+#2+#2+'1'+#2+#2+#3+
+      '默认样本类型'+#2+'Combobox'+#2+'<自行填写>'+#13+'OBR第15位'+#2+'1'+#2+#2+#3+
       '默认样本状态'+#2+'Edit'+#2+#2+'1'+#2+#2+#3+
       '组合项目代码'+#2+'Edit'+#2+#2+'1'+#2+#2+#3+
       '开机自动运行'+#2+'CheckListBox'+#2+#2+'1'+#2+#2+#3+
@@ -388,7 +386,6 @@ begin
       'KLite8响应'+#2+'CheckListBox'+#2+#2+'1'+#2+#2+#3+
       '联机号所在行'+#2+'Combobox'+#2+'PID'+#13+'OBR'+#2+'1'+#2+#2+#3+
       '联机号标识位'+#2+'Edit'+#2+#2+'1'+#2+'PID或OBR行用垂线分隔,从0开始,第几位'+#2+#3+
-      'FS205样本类型'+#2+'CheckListBox'+#2+#2+'1'+#2+#2+#3+
       'FUS2000图形'+#2+'CheckListBox'+#2+#2+'1'+#2+#2+#3+
       '中文乱码解码'+#2+'CheckListBox'+#2+#2+'1'+#2+#2+#3+
       '处理BS300重做'+#2+'CheckListBox'+#2+#2+'1'+#2+#2+#3+
@@ -502,7 +499,7 @@ begin
 
         ls3:=StrToList(ls[i],'|');
         if ls3.Count>7 then CheckDate:=copy(ls3[7],1,4)+'-'+copy(ls3[7],5,2)+'-'+copy(ls3[7],7,2)+' '+copy(ls3[7],9,2)+ifThen(copy(ls3[7],9,2)<>'',':')+copy(ls3[7],11,2);
-        if FS205_SpecType and(ls3.Count>15) then SpecType:=ls3[15];
+        if(SpecType='OBR第15位')and(ls3.Count>15) then SpecType:=ls3[15];
         ls3.Free;
       end;
 
