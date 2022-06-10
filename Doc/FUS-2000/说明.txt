@@ -2,11 +2,11 @@
 
 Socket客户端：不勾选
 服务器端口：仪器默认11119
+默认样本类型：【OBR第15位】传值应该一直是urine，所以<自行填写>尿液即可。
 联机标识位：3
 KLite8响应：不勾选
 联机号所在行：PID
-联机号标识位：3
-FS205样本类型：传值应该一直是urine，所以也不用勾选了
+联机号位：3
 FUS2000图形：勾选
 中文乱码解码：不勾选。字符串中含μ，经过UTF8Decode处理后字符串变成了空
 处理BS300重做：不勾选。勾选则有图形项目的结果会变成空
@@ -26,16 +26,16 @@ VC
 MALB
 RBCPer
 RBCInfo
-RBC
+RBC：红细胞，市政要求打印该项目的一张图片
 RBCC
-WBC
+WBC：白细胞，市政要求打印该项目的一张图片
 WBCC
-SQEP
+SQEP：鳞状上皮细胞，市政要求打印该项目的一张图片
 NSE
 REEP
 TREP
 HYAL
-UNCC
+UNCC：病理管型，市政要求打印该项目的一张图片
 GRAN
 WAXY
 BROAD
@@ -47,7 +47,7 @@ FATC
 BACT
 HYST
 BYST
-UNCX
+UNCX：未分类结晶，市政要求打印该项目的一张图片
 AMOR
 TP04
 CAOX
@@ -58,7 +58,7 @@ CYST
 LEUC
 TYRO
 SPRM
-MUCS
+MUCS：粘液丝，市政要求打印该项目的一张图片
 OVFB
 TRCH
 FAT

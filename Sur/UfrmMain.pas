@@ -270,7 +270,7 @@ begin
   EquipUnid:=ini.ReadInteger(IniSection,'设备唯一编号',-1);
   ifKLite8:=ini.readBool(IniSection,'KLite8响应',false);
   Line_Patient_ID:=ini.ReadString(IniSection,'联机号所在行','');
-  No_Patient_ID:=ini.ReadInteger(IniSection,'联机号标识位',3);
+  No_Patient_ID:=ini.ReadInteger(IniSection,'联机号位',3);
 
   FUS2000_Graph:=ini.readBool(IniSection,'FUS2000图形',false);
   FS205_Chinese:=ini.readBool(IniSection,'中文乱码解码',false);
@@ -385,7 +385,7 @@ begin
       '设备唯一编号'+#2+'Edit'+#2+#2+'1'+#2+#2+#3+
       'KLite8响应'+#2+'CheckListBox'+#2+#2+'1'+#2+#2+#3+
       '联机号所在行'+#2+'Combobox'+#2+'PID'+#13+'OBR'+#2+'1'+#2+#2+#3+
-      '联机号标识位'+#2+'Edit'+#2+#2+'1'+#2+'PID或OBR行用垂线分隔,从0开始,第几位'+#2+#3+
+      '联机号位'+#2+'Edit'+#2+#2+'1'+#2+'PID或OBR行用垂线分隔,从0开始,第几位'+#2+#3+
       'FUS2000图形'+#2+'CheckListBox'+#2+#2+'1'+#2+#2+#3+
       '中文乱码解码'+#2+'CheckListBox'+#2+#2+'1'+#2+#2+#3+
       '处理BS300重做'+#2+'CheckListBox'+#2+#2+'1'+#2+#2+#3+
@@ -530,6 +530,8 @@ begin
           sHistogramFile:=ls2[3]+'.bmp';
 
           try
+            //FUS2000的ls2[5]实际上可能包含多张图片,用424D分隔,424D在sHistogramTemp中
+            //但LIS不支持单个项目多张图片的保存与显示,刚好下面的处理方式也只会识别一张图片,故懒得拆分处理了
             sHistogramTemp:=IdDecoderMIME1.DecodeString(ls2[5]);
           except
             sHistogramFile:='';
