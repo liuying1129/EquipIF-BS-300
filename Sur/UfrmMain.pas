@@ -116,13 +116,14 @@ var
   ifKLite8:boolean;
   Line_Patient_ID:String;
   No_Patient_ID:integer;
-  FUS2000_Graph:boolean;//FUS2000图形
   FS205_Chinese:boolean;
   BS300_Rerun:boolean;
 
   RFM:STRING;       //返回数据
   hnd:integer;
   bRegister:boolean;
+
+  if_test:boolean;//是否测试
 
 {$R *.dfm}
 
@@ -190,6 +191,7 @@ var
   ctext        :string;
   reg          :tregistry;
 begin
+  if_test:=false;
   rfm:='';
 
   ConnectString:=GetConnectString;
@@ -272,7 +274,6 @@ begin
   Line_Patient_ID:=ini.ReadString(IniSection,'联机号所在行','');
   No_Patient_ID:=ini.ReadInteger(IniSection,'联机号位',3);
 
-  FUS2000_Graph:=ini.readBool(IniSection,'FUS2000图形',false);
   FS205_Chinese:=ini.readBool(IniSection,'中文乱码解码',false);
   BS300_Rerun:=ini.readBool(IniSection,'处理BS300重做',false);
 
@@ -386,7 +387,6 @@ begin
       'KLite8响应'+#2+'CheckListBox'+#2+#2+'1'+#2+#2+#3+
       '联机号所在行'+#2+'Combobox'+#2+'PID'+#13+'OBR'+#2+'1'+#2+#2+#3+
       '联机号位'+#2+'Edit'+#2+#2+'1'+#2+'PID或OBR行用垂线分隔,从0开始,第几位'+#2+#3+
-      'FUS2000图形'+#2+'CheckListBox'+#2+#2+'1'+#2+#2+#3+
       '中文乱码解码'+#2+'CheckListBox'+#2+#2+'1'+#2+#2+#3+
       '处理BS300重做'+#2+'CheckListBox'+#2+#2+'1'+#2+#2+#3+
       '高值质控联机号'+#2+'Edit'+#2+#2+'2'+#2+#2+#3+
@@ -421,7 +421,10 @@ begin
   if not OpenDialog1.Execute then exit;
   ls:=Tstringlist.Create;
   ls.LoadFromFile(OpenDialog1.FileName);
+  rfm:=ls.Text;
+  if_test:=true;
   ServerSocket1ClientRead(nil,nil);
+  if_test:=false;
   ls.Free;
 end;
 
@@ -454,7 +457,7 @@ var
   strList:TStrings;
   Message_Control_ID:string;
 begin
-  Str:=Socket.ReceiveText;
+  if not if_test then Str:=Socket.ReceiveText;
   if FS205_Chinese then Str:=UTF8Decode(Str);//解决【飞测FS-205】中文乱码问题
   
   if length(memo1.Lines.Text)>=60000 then memo1.Lines.Clear;//memo只能接受64K个字符
@@ -509,9 +512,11 @@ begin
       if uppercase(copy(trim(ls[i]),1,4))='OBX|' then
       begin
         ls2:=StrToList(ls[i],'|');
-        if(ls2.Count>5)and(ls2.Count>NoDtlStr)then
+
+        if ls2.Count>NoDtlStr then DtlStr:=ls2[NoDtlStr];
+
+        if(ls2.Count>5)and(ls2[2]<>'ED')then//ls2[2]='ED'表示图片结果
         begin
-          DtlStr:=ls2[NoDtlStr];
           sValue:=ls2[5];
           sValue:=StringReplace(sValue,'↑','',[rfReplaceAll, rfIgnoreCase]);//飞测FS-205
           sValue:=StringReplace(sValue,'↓','',[rfReplaceAll, rfIgnoreCase]);//飞测FS-205
@@ -522,36 +527,12 @@ begin
           ls7.Free;
         end;
 
-        //FUS2000尿沉渣图片
-        if FUS2000_Graph and(ls2[2]='ED')and(ls2.Count>5) then
+        //图片处理 strat
+        if(ls2[2]='ED')and(ls2.Count>5)and(trim(ls2[5])<>'') then//ls2[2]='ED'表示图片内容,ls2[5]表示图片内容
         begin
-          sValue:='';
-
-          sHistogramFile:=ls2[3]+'.bmp';
-
-          try
-            //FUS2000的ls2[5]实际上可能包含多张图片,用424D分隔,424D在sHistogramTemp中
-            //但LIS不支持单个项目多张图片的保存与显示,刚好下面的处理方式也只会识别一张图片,故懒得拆分处理了
-            sHistogramTemp:=IdDecoderMIME1.DecodeString(ls2[5]);
-          except
-            sHistogramFile:='';
-          end;
-
-          strList:=TStringlist.Create;
-          try
-            strList.Add(sHistogramTemp);
-            strList.SaveToFile(sHistogramFile);
-          finally
-            strList.Free;
-          end;
-        end;
-
-        //直方图处理 start DH36
-        if (POS('Histogram. BMP',DtlStr)>0)and(ls2.Count>5) then
-        begin
-          sValue:='';
-
-          ls4:=StrToList(ls2[5],'^');//ls2[5]为^Image^PNG^Base64^iVBORw0KGgoAAAANSUhEUgAAAJw.........
+          //DH36:ls2[5]为^Image^PNG^Base64^iVBORw0KGgoAAAANSUhEUgAAAJw.........
+          //BC10:ls2[5]为^Image^BMP^Base64^Qk0GcAAAAAAAAL.........
+          ls4:=StrToList(ls2[5],'^');
           if ls4.Count>4 then
           begin
             sHistogramFile:=DtlStr+'.'+ls4[2];
@@ -563,7 +544,20 @@ begin
             end;
           end;
           ls4.Free;
-          
+
+          if pos('^',ls2[5])<=0 then//FUS-2000、GMD-S600的ls2[5]都是图片数据,没有^
+          begin
+            sHistogramFile:=DtlStr+ifThen(leftstr(ls2[5],4)='/9j/','.jpg','.bmp');//参见文档【MUS系列全自动尿液分析系统接口规范20220210.pdf】
+
+            try
+              //FUS2000的ls2[5]实际上可能包含多张图片,用424D分隔,424D在sHistogramTemp中
+              //但LIS不支持单个项目多张图片的保存与显示,刚好下面的处理方式也只会识别一张图片,故懒得拆分处理了
+              sHistogramTemp:=IdDecoderMIME1.DecodeString(ls2[5]);
+            except
+              sHistogramFile:='';
+            end;
+          end;
+
           strList:=TStringlist.Create;
           try
             strList.Add(sHistogramTemp);
@@ -572,7 +566,7 @@ begin
             strList.Free;
           end;
         end;
-        //直方图处理 stop
+        //图片处理 stop
 
         ls2.Free;
       end;
