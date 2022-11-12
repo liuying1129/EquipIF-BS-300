@@ -614,7 +614,8 @@ begin
     
     if ifKLite8 then
     begin
-      Socket.SendText(#$0B+'MSH|^~$&|||||||ACK^R01|1|P|2.4||||0||ASCII|||'+#$0D+'MSA|AA|'+Message_Control_ID+'|message accepted|||0|'+#$0D#$1C#$0D);
+      //===================================ACK^R01===GMD-S600此域必须为ACK.KLite8使用ACK^R01确认没问题,需测试ACK能否适用于KLite8
+      Socket.SendText(#$0B+'MSH|^~$&|||||||ACK|1|P|2.4||||0||ASCII|||'+#$0D+'MSA|AA|'+Message_Control_ID+'|message accepted|||0|'+#$0D#$1C#$0D);
     end;
     
   end;
