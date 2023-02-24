@@ -394,6 +394,8 @@ var
   sHistogramFile:string;
   strList:TStrings;
   Message_Control_ID:string;
+  Query_Target:String;
+  ORF:String;
 begin
   if not if_test then Str:=Socket.ReceiveText;
   if FS205_Chinese then Str:=UTF8Decode(Str);//解决【飞测FS-205】中文乱码问题
@@ -416,146 +418,176 @@ begin
     ls:=TStringList.Create;
     ExtractStrings([#$D],[],Pchar(rfm2),ls);
 
-    SpecNo:='';
-          
-    ReceiveItemInfo:=VarArrayCreate([0,ls.Count-1],varVariant);
-
-    for  i:=0  to ls.Count-1 do
+    if (pos(#$0D'QRD|',rfm2)>0)and(pos(#$0D'QRF|',rfm2)>0) then//请求患者信息
     begin
-      if uppercase(copy(trim(ls[i]),1,4))='MSH|' then
+      for  i:=0  to ls.Count-1 do
       begin
-        ls5:=StrToList(ls[i],'|');
-        if ls5.Count>9 then Message_Control_ID:=ls5[9];
-        ls5.Free;
-      end;
-
-      if uppercase(copy(trim(ls[i]),1,4))='PID|' then
-      begin
-        if Line_Patient_ID='PID' then SpecNo:=ls[i];
-      end;
-      
-      if uppercase(copy(trim(ls[i]),1,4))='OBR|' then
-      begin
-        if Line_Patient_ID='OBR' then SpecNo:=ls[i];
-
-        ls3:=StrToList(ls[i],'|');
-        if ls3.Count>7 then CheckDate:=copy(ls3[7],1,4)+'-'+copy(ls3[7],5,2)+'-'+copy(ls3[7],7,2)+' '+copy(ls3[7],9,2)+ifThen(copy(ls3[7],9,2)<>'',':')+copy(ls3[7],11,2);
-        if(SpecType='OBR第15位')and(ls3.Count>15) then SpecType:=ls3[15];
-        ls3.Free;
-      end;
-
-      DtlStr:='';
-      sValue:='';
-      sHistogramFile:='';
-      if uppercase(copy(trim(ls[i]),1,4))='OBX|' then
-      begin
-        ls2:=StrToList(ls[i],'|');
-
-        if ls2.Count>NoDtlStr then DtlStr:=ls2[NoDtlStr];
-
-        if(ls2.Count>5)and(ls2[2]<>'ED')then//ls2[2]='ED'表示图片结果
+        if uppercase(copy(trim(ls[i]),1,4))='MSH|' then
         begin
-          sValue:=ls2[5];
-          sValue:=StringReplace(sValue,'↑','',[rfReplaceAll, rfIgnoreCase]);//飞测FS-205
-          sValue:=StringReplace(sValue,'↓','',[rfReplaceAll, rfIgnoreCase]);//飞测FS-205
-
-          //FUS2000
-          ls7:=StrToList(sValue,'^');
-          if ls7.Count>2 then sValue:=trim(ls7[1]+' '+ls7[2]);
-          ls7.Free;
+          ls5:=StrToList(ls[i],'|');
+          if ls5.Count>9 then Message_Control_ID:=ls5[9];
+          ls5.Free;
         end;
 
-        //图片处理 strat
-        if(ls2[2]='ED')and(ls2.Count>5)and(trim(ls2[5])<>'') then//ls2[2]='ED'表示图片内容,ls2[5]表示图片内容
+        if uppercase(copy(trim(ls[i]),1,4))='QRD|' then
         begin
-          //DH36:ls2[5]为^Image^PNG^Base64^iVBORw0KGgoAAAANSUhEUgAAAJw.........
-          //BC10:ls2[5]为^Image^BMP^Base64^Qk0GcAAAAAAAAL.........
-          ls4:=StrToList(ls2[5],'^');
-          if ls4.Count>4 then
-          begin
-            sHistogramFile:=DtlStr+'.'+ls4[2];
+          ls5:=StrToList(ls[i],'|');
+          if ls5.Count>8 then Query_Target:=ls5[8];
+          ls5.Free;
+        end;        
+      end;
+
+      ORF:=#$0B+
+           'MSH|^~\&|||||||ORF|1|P|2.3'+#$0D+
+           'MSA|AA|'+Message_Control_ID+#$0D+
+           'QRD||R|I||||20^LI|'+Query_Target+'|DEM|ALL'+#$0D+
+           'PID|||'+Query_Target+'||1||||'+#$0D+//PID-3此域包含用于标识患者身份的唯一标识号。这里是样本号和条码。是不是返回结果的样本号？为空会怎么样？//PID-5测试模式“1”or”0”or”2”(全部、沉渣、干化学)
+           'PV1|||'+#$0D+
+           'OBR||||||||||||||||'+#$0D+
+           #$1C#$0D;
+      Socket.SendText(ORF);
+    end else//传送检测结果
+    begin
+      SpecNo:='';
           
-            try
-              sHistogramTemp:=IdDecoderMIME1.DecodeString(ls4[4]);
-            except
-              sHistogramFile:='';
-            end;
-          end;
-          ls4.Free;
+      ReceiveItemInfo:=VarArrayCreate([0,ls.Count-1],varVariant);
 
-          if pos('^',ls2[5])<=0 then//FUS-2000、GMD-S600的ls2[5]都是图片数据,没有^
-          begin
-            sHistogramFile:=DtlStr+ifThen(leftstr(ls2[5],4)='/9j/','.jpg','.bmp');//参见文档【MUS系列全自动尿液分析系统接口规范20220210.pdf】
-
-            try
-              //FUS2000的ls2[5]实际上可能包含多张图片,用424D分隔,424D在sHistogramTemp中
-              //但LIS不支持单个项目多张图片的保存与显示,刚好下面的处理方式也只会识别一张图片,故懒得拆分处理了
-              sHistogramTemp:=IdDecoderMIME1.DecodeString(ls2[5]);
-            except
-              sHistogramFile:='';
-            end;
-          end;
-
-          strList:=TStringlist.Create;
-          try
-            strList.Add(sHistogramTemp);
-            strList.SaveToFile(sHistogramFile);
-          finally
-            strList.Free;
-          end;
-        end;
-        //图片处理 stop
-
-        ls2.Free;
-      end;
-      ReceiveItemInfo[i]:=VarArrayof([DtlStr,sValue,'',sHistogramFile]);
-
-      //处理重做结果Start
-      if BS300_Rerun then
+      for  i:=0  to ls.Count-1 do
       begin
-        for  j:=0  to i-1 do
+        if uppercase(copy(trim(ls[i]),1,4))='MSH|' then
         begin
-          if (DtlStr<>'')and(ReceiveItemInfo[j][0]=DtlStr) then ReceiveItemInfo[j]:=VarArrayof(['','','','']);
+          ls5:=StrToList(ls[i],'|');
+          if ls5.Count>9 then Message_Control_ID:=ls5[9];
+          ls5.Free;
         end;
+
+        if uppercase(copy(trim(ls[i]),1,4))='PID|' then
+        begin
+          if Line_Patient_ID='PID' then SpecNo:=ls[i];
+        end;
+      
+        if uppercase(copy(trim(ls[i]),1,4))='OBR|' then
+        begin
+          if Line_Patient_ID='OBR' then SpecNo:=ls[i];
+
+          ls3:=StrToList(ls[i],'|');
+          if ls3.Count>7 then CheckDate:=copy(ls3[7],1,4)+'-'+copy(ls3[7],5,2)+'-'+copy(ls3[7],7,2)+' '+copy(ls3[7],9,2)+ifThen(copy(ls3[7],9,2)<>'',':')+copy(ls3[7],11,2);
+          if(SpecType='OBR第15位')and(ls3.Count>15) then SpecType:=ls3[15];
+          ls3.Free;
+        end;
+
+        DtlStr:='';
+        sValue:='';
+        sHistogramFile:='';
+        if uppercase(copy(trim(ls[i]),1,4))='OBX|' then
+        begin
+          ls2:=StrToList(ls[i],'|');
+
+          if ls2.Count>NoDtlStr then DtlStr:=ls2[NoDtlStr];
+
+          if(ls2.Count>5)and(ls2[2]<>'ED')then//ls2[2]='ED'表示图片结果
+          begin
+            sValue:=ls2[5];
+            sValue:=StringReplace(sValue,'↑','',[rfReplaceAll, rfIgnoreCase]);//飞测FS-205
+            sValue:=StringReplace(sValue,'↓','',[rfReplaceAll, rfIgnoreCase]);//飞测FS-205
+
+            //FUS2000
+            ls7:=StrToList(sValue,'^');
+            if ls7.Count>2 then sValue:=trim(ls7[1]+' '+ls7[2]);
+            ls7.Free;
+          end;
+
+          //图片处理 strat
+          if(ls2[2]='ED')and(ls2.Count>5)and(trim(ls2[5])<>'') then//ls2[2]='ED'表示图片内容,ls2[5]表示图片内容
+          begin
+            //DH36:ls2[5]为^Image^PNG^Base64^iVBORw0KGgoAAAANSUhEUgAAAJw.........
+            //BC10:ls2[5]为^Image^BMP^Base64^Qk0GcAAAAAAAAL.........
+            ls4:=StrToList(ls2[5],'^');
+            if ls4.Count>4 then
+            begin
+              sHistogramFile:=DtlStr+'.'+ls4[2];
+          
+              try
+                sHistogramTemp:=IdDecoderMIME1.DecodeString(ls4[4]);
+              except
+                sHistogramFile:='';
+              end;
+            end;
+            ls4.Free;
+
+            if pos('^',ls2[5])<=0 then//FUS-2000、GMD-S600的ls2[5]都是图片数据,没有^
+            begin
+              sHistogramFile:=DtlStr+ifThen(leftstr(ls2[5],4)='/9j/','.jpg','.bmp');//参见文档【MUS系列全自动尿液分析系统接口规范20220210.pdf】
+
+              try
+                //FUS2000的ls2[5]实际上可能包含多张图片,用424D分隔,424D在sHistogramTemp中
+                //但LIS不支持单个项目多张图片的保存与显示,刚好下面的处理方式也只会识别一张图片,故懒得拆分处理了
+                sHistogramTemp:=IdDecoderMIME1.DecodeString(ls2[5]);
+              except
+                sHistogramFile:='';
+              end;
+            end;
+
+            strList:=TStringlist.Create;
+            try
+              strList.Add(sHistogramTemp);
+              strList.SaveToFile(sHistogramFile);
+            finally
+              strList.Free;
+            end;
+          end;
+          //图片处理 stop
+
+          ls2.Free;
+        end;
+        ReceiveItemInfo[i]:=VarArrayof([DtlStr,sValue,'',sHistogramFile]);
+
+        //处理重做结果Start
+        if BS300_Rerun then
+        begin
+          for  j:=0  to i-1 do
+          begin
+            if (DtlStr<>'')and(ReceiveItemInfo[j][0]=DtlStr) then ReceiveItemInfo[j]:=VarArrayof(['','','','']);
+          end;
+        end;
+        //处理重做结果End
       end;
-      //处理重做结果End
+
+      //联机号begin
+      ls8:=StrToList(SpecNo,'|');
+      if ls8.Count>No_Patient_ID then SpecNo:=ls8[No_Patient_ID];
+      ls8.Free;
+      SpecNo:=trim(StringReplace(SpecNo,'^R','',[rfReplaceAll, rfIgnoreCase]));//KLite8
+      if SpecNo='' then SpecNo:=formatdatetime('nnss',now);
+      SpecNo:=rightstr('0000'+SpecNo,4);
+      //联机号end
+
+      if bRegister then
+      begin
+        FInts :=CreateOleObject('Data2LisSvr.Data2Lis');
+        FInts.fData2Lis(ReceiveItemInfo,(SpecNo),CheckDate,
+          (GroupName),(SpecType),(SpecStatus),(EquipChar),
+          (CombinID),'',(LisFormCaption),(ConnectString),
+          (QuaContSpecNoG),(QuaContSpecNo),(QuaContSpecNoD),'',
+          ifRecLog,true,'常规',
+          '',
+          EquipUnid,
+          '','','','',
+          -1,-1,-1,-1,
+          -1,-1,-1,-1,
+          false,false,false,false);
+        if not VarIsEmpty(FInts) then FInts:= unAssigned;
+      end;
+
+      EBPos:=pos(#$1C#$0D,rfm);
+    
+      if ifKLite8 then
+      begin
+        //===================================ACK^R01===GMD-S600此域必须为ACK.KLite8使用ACK^R01确认没问题,需测试ACK能否适用于KLite8
+        Socket.SendText(#$0B+'MSH|^~$&|||||||ACK|1|P|2.4||||0||ASCII|||'+#$0D+'MSA|AA|'+Message_Control_ID+'|message accepted|||0|'+#$0D#$1C#$0D);
+      end;
     end;
     ls.Free;
-
-    //联机号begin
-    ls8:=StrToList(SpecNo,'|');
-    if ls8.Count>No_Patient_ID then SpecNo:=ls8[No_Patient_ID];
-    ls8.Free;
-    SpecNo:=trim(StringReplace(SpecNo,'^R','',[rfReplaceAll, rfIgnoreCase]));//KLite8
-    if SpecNo='' then SpecNo:=formatdatetime('nnss',now);
-    SpecNo:=rightstr('0000'+SpecNo,4);
-    //联机号end
-
-    if bRegister then
-    begin
-      FInts :=CreateOleObject('Data2LisSvr.Data2Lis');
-      FInts.fData2Lis(ReceiveItemInfo,(SpecNo),CheckDate,
-        (GroupName),(SpecType),(SpecStatus),(EquipChar),
-        (CombinID),'',(LisFormCaption),(ConnectString),
-        (QuaContSpecNoG),(QuaContSpecNo),(QuaContSpecNoD),'',
-        ifRecLog,true,'常规',
-        '',
-        EquipUnid,
-        '','','','',
-        -1,-1,-1,-1,
-        -1,-1,-1,-1,
-        false,false,false,false);
-      if not VarIsEmpty(FInts) then FInts:= unAssigned;
-    end;
-
-    EBPos:=pos(#$1C#$0D,rfm);
-    
-    if ifKLite8 then
-    begin
-      //===================================ACK^R01===GMD-S600此域必须为ACK.KLite8使用ACK^R01确认没问题,需测试ACK能否适用于KLite8
-      Socket.SendText(#$0B+'MSH|^~$&|||||||ACK|1|P|2.4||||0||ASCII|||'+#$0D+'MSA|AA|'+Message_Control_ID+'|message accepted|||0|'+#$0D#$1C#$0D);
-    end;
-    
   end;
 end;
 
