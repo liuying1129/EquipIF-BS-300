@@ -8,7 +8,7 @@ uses
   ComCtrls, ToolWin, ExtCtrls,
   inifiles,Dialogs,StrUtils, DB,ComObj,Variants,
   ScktComp,EncdDecd{DecodeStream},Jpeg{TJPEGImage}, IdBaseComponent, IdCoder,
-  IdCoder3to4, IdCoderMIME, CoolTrayIcon;
+  IdCoder3to4, IdCoderMIME, CoolTrayIcon, Uni,OracleUniProvider;
 
 type
   TfrmMain = class(TForm)
@@ -400,6 +400,17 @@ var
   Message_Control_ID:string;
   Query_Target:String;
   ORF:String;
+
+  lls:TStrings;
+  UniConnection1:TUniConnection;
+  UniQuery1:TUniQuery;
+
+  patientname:String;
+  sex:String;
+  age:String;
+  report_date:String;//申请时间
+  deptname:String;//申请科室
+  check_doctor:String;//申请医生
 begin
   if not if_test then Str:=Socket.ReceiveText;
   if FS205_Chinese then Str:=UTF8Decode(Str);//解决【飞测FS-205】中文乱码问题
@@ -439,6 +450,63 @@ begin
           if ls5.Count>8 then Query_Target:=ls5[8];
           ls5.Free;
         end;        
+      end;
+
+      //读HIS数据库
+      if trim(HisConnStr)<>'' then
+      begin
+        lls:=TStringList.Create;
+        lls.Delimiter:=';';
+        lls.DelimitedText:=HisConnStr;
+      
+        UniConnection1:=TUniConnection.Create(nil);
+        UniConnection1.ProviderName:=lls.Values['ProviderName'];
+        UniConnection1.SpecificOptions.Values['Direct']:='True';
+        UniConnection1.Username:=lls.Values['Username'];
+        UniConnection1.Password:=lls.Values['Password'];
+        UniConnection1.Server:=lls.Values['Server'];
+
+        lls.Free;
+
+        Try
+          UniConnection1.Connect;
+        except
+          on E:Exception do
+          begin
+            memo1.Lines.Add('连接HIS数据库失败:'+E.Message);
+          end;
+        end;
+
+        if UniConnection1.Connected then
+        begin
+          UniQuery1:=TUniQuery.Create(nil);
+          UniQuery1.Connection:=UniConnection1;
+          UniQuery1.SQL.Text:='select * from LIS_REQUEST';
+          Try
+            UniQuery1.Open;
+          except
+            on E:Exception do
+            begin
+              memo1.Lines.Add('打开表失败:'+E.Message);
+            end;
+          end;
+          if UniQuery1.Active then
+          begin
+            //组合项目
+            patientname:=UniQuery1.fieldbyname('NAME').AsString;//患者姓名
+            //患者性别
+            if '1'=UniQuery1.fieldbyname('SEX').AsString then sex:='男'
+              else if '2'=UniQuery1.fieldbyname('SEX').AsString then sex:='女'; 
+            age:=UniQuery1.fieldbyname('AGE').AsString+UniQuery1.fieldbyname('AGEUNIT').AsString;//患者年龄
+            report_date:=UniQuery1.fieldbyname('NAME').AsString;//申请时间
+            deptname:=UniQuery1.fieldbyname('NAME').AsString;//申请科室
+            check_doctor:=UniQuery1.fieldbyname('NAME').AsString;//申请医生
+          end;
+          UniQuery1.Free;
+        end;
+
+        UniConnection1.Close;
+        UniConnection1.Free;
       end;
 
       ORF:=#$0B+
