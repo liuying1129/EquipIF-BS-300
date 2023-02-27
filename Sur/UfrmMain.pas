@@ -108,6 +108,7 @@ var
   No_Patient_ID:integer;
   FS205_Chinese:boolean;
   BS300_Rerun:boolean;
+  HisConnStr:String;
 
   RFM:STRING;       //返回数据
   hnd:integer;
@@ -248,6 +249,8 @@ begin
   QuaContSpecNo:=ini.ReadString(IniSection,'常值质控联机号','9998');
   QuaContSpecNoD:=ini.ReadString(IniSection,'低值质控联机号','9997');
 
+  HisConnStr:=ini.ReadString(IniSection,'连接HIS数据库','');
+  
   ini.Free;
 
   OperateLinkFile(application.ExeName,'\'+ChangeFileExt(ExtractFileName(Application.ExeName),'.lnk'),15,autorun);
@@ -328,6 +331,7 @@ begin
       '联机号位'+#2+'Edit'+#2+#2+'1'+#2+'PID或OBR行用垂线分隔,从0开始,第几位'+#2+#3+
       '中文乱码解码'+#2+'CheckListBox'+#2+#2+'1'+#2+'判断依据:中文及特殊字符(如μ)是否显示正常'+#2+#3+
       '处理BS300重做'+#2+'CheckListBox'+#2+#2+'1'+#2+#2+#3+
+      '连接HIS数据库'+#2+'UniConn'+#2+#2+'1'+#2+'Oracle Server格式:IP:Port:SID'+#2+#3+
       '高值质控联机号'+#2+'Edit'+#2+#2+'2'+#2+#2+#3+
       '常值质控联机号'+#2+'Edit'+#2+#2+'2'+#2+#2+#3+
       '低值质控联机号'+#2+'Edit'+#2+#2+'2'+#2+#2;
