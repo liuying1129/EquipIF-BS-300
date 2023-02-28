@@ -408,9 +408,11 @@ var
   patientname:String;
   sex:String;
   age:String;
+  AGEUNIT:String;
   report_date:String;//申请时间
   deptname:String;//申请科室
   check_doctor:String;//申请医生
+  s1:String;
 begin
   if not if_test then Str:=Socket.ReceiveText;
   if FS205_Chinese then Str:=UTF8Decode(Str);//解决【飞测FS-205】中文乱码问题
@@ -452,6 +454,14 @@ begin
         end;        
       end;
 
+      patientname:='';//患者姓名
+      sex:='';//患者性别
+      age:='';//患者年龄
+      report_date:='';//申请时间
+      deptname:='';//申请科室
+      check_doctor:='';//申请医生
+      s1:='2';//干化学
+
       //读HIS数据库
       if trim(HisConnStr)<>'' then
       begin
@@ -481,26 +491,32 @@ begin
         begin
           UniQuery1:=TUniQuery.Create(nil);
           UniQuery1.Connection:=UniConnection1;
-          UniQuery1.SQL.Text:='select * from LIS_REQUEST';
+          UniQuery1.SQL.Text:='select * from LIS_REQUEST where BARCODE='''+copy(Query_Target,Pos('^',Query_Target)+1,MaxInt)+''' ';
           Try
             UniQuery1.Open;
           except
             on E:Exception do
             begin
-              memo1.Lines.Add('打开表失败:'+E.Message);
+              memo1.Lines.Add('打开表LIS_REQUEST失败:'+E.Message);
             end;
           end;
           if UniQuery1.Active then
           begin
-            //组合项目
+            //组合项目,1-全部、0-沉渣、2-干化学
+            if UniQuery1.fieldbyname('ORDER_ID').AsString='' then s1:='0'
+              else if UniQuery1.fieldbyname('ORDER_ID').AsString='' then s1:='1'
+                else if UniQuery1.fieldbyname('ORDER_ID').AsString='' then s1:='2';
             patientname:=UniQuery1.fieldbyname('NAME').AsString;//患者姓名
             //患者性别
             if '1'=UniQuery1.fieldbyname('SEX').AsString then sex:='男'
-              else if '2'=UniQuery1.fieldbyname('SEX').AsString then sex:='女'; 
-            age:=UniQuery1.fieldbyname('AGE').AsString+UniQuery1.fieldbyname('AGEUNIT').AsString;//患者年龄
-            report_date:=UniQuery1.fieldbyname('NAME').AsString;//申请时间
-            deptname:=UniQuery1.fieldbyname('NAME').AsString;//申请科室
-            check_doctor:=UniQuery1.fieldbyname('NAME').AsString;//申请医生
+              else if '2'=UniQuery1.fieldbyname('SEX').AsString then sex:='女'
+                else if '3'=UniQuery1.fieldbyname('SEX').AsString then sex:='不详'; 
+            if UniQuery1.fieldbyname('AGEUNIT').AsString='Y' THEN AGEUNIT:='岁'
+              else if UniQuery1.fieldbyname('AGEUNIT').AsString='N' THEN AGEUNIT:='月'; 
+            age:=UniQuery1.fieldbyname('AGE').AsString+AGEUNIT;//患者年龄
+            report_date:=UniQuery1.fieldbyname('WRITE_TIME').AsString;//申请时间
+            deptname:=UniQuery1.fieldbyname('REQDEPT').AsString;//申请科室
+            check_doctor:=UniQuery1.fieldbyname('WRITE_NAME').AsString;//申请医生
           end;
           UniQuery1.Free;
         end;
@@ -513,9 +529,9 @@ begin
            'MSH|^~\&|||||||ORF|1|P|2.3'+#$0D+
            'MSA|AA|'+Message_Control_ID+#$0D+
            'QRD||R|I||||20^LI|'+Query_Target+'|DEM|ALL'+#$0D+
-           'PID|||'+Query_Target+'||1||||'+#$0D+//PID-3此域包含用于标识患者身份的唯一标识号。这里是样本号和条码。是不是返回结果的样本号？为空会怎么样？//PID-5测试模式“1”or”0”or”2”(全部、沉渣、干化学)
+           'PID|||'+Query_Target+'||'+s1+'|'+patientname+'||'+age+'|'+sex+#$0D+//PID-3此域包含用于标识患者身份的唯一标识号。这里是样本号和条码。是不是返回结果的样本号？为空会怎么样？//PID-5测试模式“1”or”0”or”2”(全部、沉渣、干化学)
            'PV1|||'+#$0D+
-           'OBR||||||||||||||||'+#$0D+
+           'OBR|||||||||||||||'+deptname+'|'+check_doctor+#$0D+
            #$1C#$0D;
       Socket.SendText(ORF);
     end else//传送检测结果
