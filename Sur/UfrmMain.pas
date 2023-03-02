@@ -415,7 +415,12 @@ var
   deptname:String;//申请科室
   check_doctor:String;//申请医生
   s1:String;
+  His_ItemId:String;
+  ItemList: TStrings;
 
+  Conn:TADOConnection;
+  AdoQry:TAdoQuery;
+  
   MsgType:TMsgType;
 begin
   if not if_test then Str:=Socket.ReceiveText;
@@ -436,11 +441,13 @@ begin
     rfm2:=copy(rfm,1,EBPos+1);//1个标本结果
     delete(rfm,1,EBPos+1);
 
+    EBPos:=pos(#$1C#$0D,rfm);
+
     if (pos(#$0D'QRD|',rfm2)>0)and(pos(#$0D'QRF|',rfm2)>0) then MsgType:=QRY else MsgType:=ORU;
 
     case MsgType of
       QRY: begin
-        if trim(HisConnStr)='' then begin EBPos:=pos(#$1C#$0D,rfm);continue;end;
+        if trim(HisConnStr)='' then continue;
         
         ls:=TStringList.Create;
         ExtractStrings([#$D],[],Pchar(rfm2),ls);
@@ -464,14 +471,6 @@ begin
 
         ls.Free;
 
-        patientname:='';//患者姓名
-        sex:='';//患者性别
-        age:='';//患者年龄
-        report_date:='';//申请时间
-        deptname:='';//申请科室
-        check_doctor:='';//申请医生
-        s1:='2';//干化学
-
         //读HIS数据库
         lls:=TStringList.Create;
         lls.Delimiter:=';';
@@ -480,6 +479,7 @@ begin
         UniConnection1:=TUniConnection.Create(nil);
         UniConnection1.ProviderName:=lls.Values['ProviderName'];
         UniConnection1.SpecificOptions.Values['Direct']:='True';
+        UniConnection1.LoginPrompt:=false;
         UniConnection1.Username:=lls.Values['Username'];
         UniConnection1.Password:=lls.Values['Password'];
         UniConnection1.Server:=lls.Values['Server'];
@@ -495,7 +495,7 @@ begin
           end;
         end;
 
-        if not UniConnection1.Connected then begin UniConnection1.Close;UniConnection1.Free;EBPos:=pos(#$1C#$0D,rfm);continue;end;
+        if not UniConnection1.Connected then begin UniConnection1.Free;continue;end;
 
         UniQuery1:=TUniQuery.Create(nil);
         UniQuery1.Connection:=UniConnection1;
@@ -509,13 +509,42 @@ begin
           end;
         end;
         
-        if not UniQuery1.Active then begin UniQuery1.Free;UniConnection1.Close;UniConnection1.Free;EBPos:=pos(#$1C#$0D,rfm);continue;end;
-        if UniQuery1.RecordCount<=0 then begin UniQuery1.Free;UniConnection1.Close;UniConnection1.Free;EBPos:=pos(#$1C#$0D,rfm);continue;end;
+        if not UniQuery1.Active then begin UniQuery1.Free;UniConnection1.Free;continue;end;
+        if UniQuery1.RecordCount<=0 then begin UniQuery1.Free;UniConnection1.Free;continue;end;
 
+        ItemList:=TStringList.Create;
+
+        while not UniQuery1.Eof do
+        begin
+          Conn:=TADOConnection.Create(nil);
+          Conn.LoginPrompt:=false;
+          Conn.ConnectionString:=ConnectString;
+          AdoQry:=TAdoQuery.Create(nil);
+          AdoQry.Connection:=Conn;
+          AdoQry.Close;
+          AdoQry.SQL.Clear;
+          AdoQry.SQL.Text:='SELECT ci.Remark FROM HisCombItem hci,combinitem ci WHERE ci.Unid=hci.CombUnid and hci.HisItem='''+UniQuery1.fieldbyname('ORDER_ID').AsString+''' AND hci.ExtSystemId=''PEIS'' and isnull(Remark,'''')<>'''' ';
+          AdoQry.Open;
+          while not AdoQry.Eof do
+          begin
+            ItemList.Add(AdoQry.fieldbyname('Remark').AsString);//利用组合项目的【说明】字段，1-全部、0-沉渣、2-干化学
+
+            AdoQry.Next;
+          end;
+          AdoQry.Free;
+          Conn.Free;
+
+          UniQuery1.Next;
+        end;
+        
         //组合项目,1-全部、0-沉渣、2-干化学
-        if UniQuery1.fieldbyname('ORDER_ID').AsString='' then s1:='0'
-          else if UniQuery1.fieldbyname('ORDER_ID').AsString='' then s1:='1'
-            else if UniQuery1.fieldbyname('ORDER_ID').AsString='' then s1:='2';
+        if (ItemList.IndexOf('1')>=0) or ((ItemList.IndexOf('0')>=0) and (ItemList.IndexOf('2')>=0)) then s1:='1'
+          else if ItemList.IndexOf('0')>=0 then s1:='0'
+            else if ItemList.IndexOf('2')>=0 then s1:='2'
+              else begin ItemList.Free;UniQuery1.Free;UniConnection1.Free;continue;end;
+
+        ItemList.Free;
+
         patientname:=UniQuery1.fieldbyname('NAME').AsString;//患者姓名
         //患者性别
         if '1'=UniQuery1.fieldbyname('SEX').AsString then sex:='男'
@@ -529,8 +558,6 @@ begin
         check_doctor:=UniQuery1.fieldbyname('WRITE_NAME').AsString;//申请医生
 
         UniQuery1.Free;
-
-        UniConnection1.Close;
         UniConnection1.Free;
 
         ORF:=#$0B+
@@ -687,8 +714,6 @@ begin
         end;
       end;
     end;
-
-    EBPos:=pos(#$1C#$0D,rfm);
   end;
 end;
 
