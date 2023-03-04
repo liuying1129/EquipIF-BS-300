@@ -78,7 +78,7 @@ var
 
 implementation
 
-uses ucommfunction;
+uses ucommfunction, superobject;
 
 type TMsgType = (QRY, ORU);//QRY表示仪器向LIS查询病人信息;ORU表示仪器向LIS发送结果
 
@@ -390,7 +390,7 @@ var
   sValue:string;
   FInts:OleVariant;
   ReceiveItemInfo:OleVariant;
-  i,j:integer;
+  i,j,k:integer;
   Str:string;
   SBPos,EBPos:integer;
   ls,ls2,ls3,ls4,ls5,ls7,ls8:tstrings;
@@ -422,6 +422,9 @@ var
   AdoQry:TAdoQuery;
   
   MsgType:TMsgType;
+
+  aJson:ISuperObject;
+  aSuperArray: TSuperArray;
 begin
   if not if_test then Str:=Socket.ReceiveText;
   if FS205_Chinese then Str:=UTF8Decode(Str);//解决【飞测FS-205】中文乱码问题
@@ -499,44 +502,30 @@ begin
 
         UniQuery1:=TUniQuery.Create(nil);
         UniQuery1.Connection:=UniConnection1;
-        UniQuery1.SQL.Text:='select * from LIS_REQUEST where BARCODE='''+copy(Query_Target,Pos('^',Query_Target)+1,MaxInt)+''' ';
+        UniQuery1.SQL.Text:='select wm_concat(distinct ORDER_ID) as ORDER_ID from LIS_REQUEST where BARCODE='''+copy(Query_Target,Pos('^',Query_Target)+1,MaxInt)+''' ';//用逗号连接HIS组合项目代码
         Try
           UniQuery1.Open;
         except
           on E:Exception do
           begin
-            memo1.Lines.Add('打开表LIS_REQUEST失败:'+E.Message);
+            memo1.Lines.Add('查询HIS组合项目失败:'+E.Message);
           end;
         end;
         
         if not UniQuery1.Active then begin UniQuery1.Free;UniConnection1.Free;continue;end;
         if UniQuery1.RecordCount<=0 then begin UniQuery1.Free;UniConnection1.Free;continue;end;
 
+        aJson:=SO(GetLisCombItem(PChar(ConnectString),PChar(UniQuery1.fieldbyname('ORDER_ID').AsString),PChar(EquipChar),'PEIS'));
+
+        if not aJson.AsObject.Exists('项目信息') then begin UniQuery1.Free;UniConnection1.Free;continue;end;
+        aSuperArray:=aJson['项目信息'].AsArray;
+  
         ItemList:=TStringList.Create;
-
-        while not UniQuery1.Eof do
+        for k:=0 to aSuperArray.Length-1 do
         begin
-          Conn:=TADOConnection.Create(nil);
-          Conn.LoginPrompt:=false;
-          Conn.ConnectionString:=ConnectString;
-          AdoQry:=TAdoQuery.Create(nil);
-          AdoQry.Connection:=Conn;
-          AdoQry.Close;
-          AdoQry.SQL.Clear;
-          AdoQry.SQL.Text:='SELECT ci.Remark FROM HisCombItem hci,combinitem ci WHERE ci.Unid=hci.CombUnid and hci.HisItem='''+UniQuery1.fieldbyname('ORDER_ID').AsString+''' AND hci.ExtSystemId=''PEIS'' and isnull(Remark,'''')<>'''' ';
-          AdoQry.Open;
-          while not AdoQry.Eof do
-          begin
-            ItemList.Add(AdoQry.fieldbyname('Remark').AsString);//利用组合项目的【说明】字段，1-全部、0-沉渣、2-干化学
-
-            AdoQry.Next;
-          end;
-          AdoQry.Free;
-          Conn.Free;
-
-          UniQuery1.Next;
+          ItemList.Add(aSuperArray[k]['组合项目备注'].AsString);//利用组合项目的【说明】字段，1-全部、0-沉渣、2-干化学
         end;
-        
+
         //组合项目,1-全部、0-沉渣、2-干化学
         if (ItemList.IndexOf('1')>=0) or ((ItemList.IndexOf('0')>=0) and (ItemList.IndexOf('2')>=0)) then s1:='1'
           else if ItemList.IndexOf('0')>=0 then s1:='0'
@@ -544,6 +533,21 @@ begin
               else begin ItemList.Free;UniQuery1.Free;UniConnection1.Free;continue;end;
 
         ItemList.Free;
+
+        UniQuery1.Close;
+        UniQuery1.SQL.Clear;
+        UniQuery1.SQL.Text:='select * from LIS_REQUEST where BARCODE='''+copy(Query_Target,Pos('^',Query_Target)+1,MaxInt)+''' ';//用逗号连接HIS组合项目代码
+        Try
+          UniQuery1.Open;
+        except
+          on E:Exception do
+          begin
+            memo1.Lines.Add('查询HIS受检者信息失败:'+E.Message);
+          end;
+        end;
+
+        if not UniQuery1.Active then begin UniQuery1.Free;UniConnection1.Free;continue;end;
+        if UniQuery1.RecordCount<=0 then begin UniQuery1.Free;UniConnection1.Free;continue;end;
 
         patientname:=UniQuery1.fieldbyname('NAME').AsString;//患者姓名
         //患者性别

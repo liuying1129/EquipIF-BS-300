@@ -3,7 +3,8 @@ program ProBS300;
 uses
   Forms,
   UfrmMain in 'UfrmMain.pas' {frmMain},
-  UCommFunction in 'UCommFunction.pas';
+  UCommFunction in 'UCommFunction.pas',
+  superobject in 'superobject.pas';
 
 {$R *.res}
 

@@ -11,6 +11,7 @@ function EnCryptStr(aStr: Pchar; aKey: Pchar): Pchar;stdcall;external 'LYFunctio
 function GetHDSn(const RootPath:Pchar):Pchar;stdcall;external 'LYFunction.dll';
 function TryStrToFloatExt(const pSourStr:Pchar; var Value: Single): Boolean;stdcall;external 'LYFunction.dll';
 function StrToList(const SourStr:string;const Separator:string):TStrings;
+function GetLisCombItem(const AAdoconnstr,AHisItem,AEquipWord,AExtSystemId:PChar):PChar;stdcall;external 'DuplexSupport.dll';
 
 implementation
 
