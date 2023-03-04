@@ -393,7 +393,7 @@ var
   i,j,k:integer;
   Str:string;
   SBPos,EBPos:integer;
-  ls,ls2,ls3,ls4,ls5,ls7,ls8:tstrings;
+  ls,ls2,ls3,ls4,ls5,ls7,ls8,ls9:tstrings;
   DtlStr:string;
   CheckDate:string;
   sHistogramTemp:string;
@@ -414,6 +414,7 @@ var
   report_date:String;//申请时间
   deptname:String;//申请科室
   check_doctor:String;//申请医生
+  His_Unid:String;
   s1:String;
   His_ItemId:String;
   ItemList: TStrings;
@@ -425,6 +426,13 @@ var
 
   aJson:ISuperObject;
   aSuperArray: TSuperArray;
+
+  r_Barcode:String;
+  r_patientname:String;
+  r_sex:String;
+  r_age:String;
+  r_check_doctor:String;//申请医生
+  r_His_Unid:String;
 begin
   if not if_test then Str:=Socket.ReceiveText;
   if FS205_Chinese then Str:=UTF8Decode(Str);//解决【飞测FS-205】中文乱码问题
@@ -536,7 +544,7 @@ begin
 
         UniQuery1.Close;
         UniQuery1.SQL.Clear;
-        UniQuery1.SQL.Text:='select * from LIS_REQUEST where BARCODE='''+copy(Query_Target,Pos('^',Query_Target)+1,MaxInt)+''' ';//用逗号连接HIS组合项目代码
+        UniQuery1.SQL.Text:='select top 1 * from LIS_REQUEST where BARCODE='''+copy(Query_Target,Pos('^',Query_Target)+1,MaxInt)+''' ';//用逗号连接HIS组合项目代码
         Try
           UniQuery1.Open;
         except
@@ -560,6 +568,7 @@ begin
         report_date:=UniQuery1.fieldbyname('WRITE_TIME').AsString;//申请时间
         deptname:=UniQuery1.fieldbyname('REQDEPT').AsString;//申请科室
         check_doctor:=UniQuery1.fieldbyname('WRITE_NAME').AsString;//申请医生
+        His_Unid:=UniQuery1.fieldbyname('REG_ID').AsString;//体检号
 
         UniQuery1.Free;
         UniConnection1.Free;
@@ -568,7 +577,7 @@ begin
              'MSH|^~\&|||||||ORF|1|P|2.3'+#$0D+
              'MSA|AA|'+Message_Control_ID+#$0D+
              'QRD||R|I||||20^LI|'+Query_Target+'|DEM|ALL'+#$0D+
-             'PID|||'+Query_Target+'||'+s1+'|'+patientname+'||'+age+'|'+sex+#$0D+//PID-3此域包含用于标识患者身份的唯一标识号。这里是样本号和条码。是不是返回结果的样本号？为空会怎么样？//PID-5测试模式“1”or”0”or”2”(全部、沉渣、干化学)
+             'PID|||'+Query_Target+'||'+s1+'|'+patientname+'|'+His_Unid+'|'+age+'|'+sex+#$0D+//PID-3此域包含用于标识患者身份的唯一标识号。这里是样本号和条码。是不是返回结果的样本号？为空会怎么样？//PID-5测试模式“1”or”0”or”2”(全部、沉渣、干化学)
              'PV1|||'+#$0D+
              'OBR|||||||||||||||'+deptname+'|'+check_doctor+#$0D+
              #$1C#$0D;
@@ -579,6 +588,13 @@ begin
         ExtractStrings([#$D],[],Pchar(rfm2),ls);
 
         SpecNo:='';
+
+        r_Barcode:='';
+        r_patientname:='';
+        r_sex:='';
+        r_age:='';
+        r_check_doctor:='';//申请医生
+        r_His_Unid:='';
 
         ReceiveItemInfo:=VarArrayCreate([0,ls.Count-1],varVariant);
 
@@ -594,6 +610,13 @@ begin
           if uppercase(copy(trim(ls[i]),1,4))='PID|' then
           begin
             if Line_Patient_ID='PID' then SpecNo:=ls[i];
+            ls9:=StrToList(ls[i],'|');
+            if ls9.Count>4 then r_Barcode:=ls9[4];
+            if ls9.Count>5 then r_patientname:=ls9[5];
+            if ls9.Count>8 then r_sex:=ls9[8];
+            if ls9.Count>7 then r_age:=ls9[7];
+            if ls9.Count>6 then r_His_Unid:=ls9[6];
+            ls9.Free;
           end;
 
           if uppercase(copy(trim(ls[i]),1,4))='OBR|' then
@@ -603,6 +626,7 @@ begin
             ls3:=StrToList(ls[i],'|');
             if ls3.Count>7 then CheckDate:=copy(ls3[7],1,4)+'-'+copy(ls3[7],5,2)+'-'+copy(ls3[7],7,2)+' '+copy(ls3[7],9,2)+ifThen(copy(ls3[7],9,2)<>'',':')+copy(ls3[7],11,2);
             if(SpecType='OBR第15位')and(ls3.Count>15) then SpecType:=ls3[15];
+            if ls3.Count>16 then r_check_doctor:=ls3[16];//申请医生
             ls3.Free;
           end;
 
@@ -699,12 +723,12 @@ begin
           FInts :=CreateOleObject('Data2LisSvr.Data2Lis');
           FInts.fData2Lis(ReceiveItemInfo,(SpecNo),CheckDate,
             (GroupName),(SpecType),(SpecStatus),(EquipChar),
-            (CombinID),'',(LisFormCaption),(ConnectString),
+            (CombinID),r_patientname+'{!@#}'+r_sex+'{!@#}{!@#}'+r_age+'{!@#}{!@#}{!@#}'+r_check_doctor,(LisFormCaption),(ConnectString),
             (QuaContSpecNoG),(QuaContSpecNo),(QuaContSpecNoD),'',
             ifRecLog,true,'常规',
-            '',
+            r_Barcode,
             EquipUnid,
-            '','','','',
+            r_His_Unid,'','','',
             -1,-1,-1,-1,
             -1,-1,-1,-1,
             false,false,false,false);
