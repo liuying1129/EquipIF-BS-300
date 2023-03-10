@@ -78,7 +78,7 @@ var
 
 implementation
 
-uses ucommfunction, superobject;
+uses ucommfunction;
 
 type TMsgType = (QRY, ORU);//QRY表示仪器向LIS查询病人信息;ORU表示仪器向LIS发送结果
 
@@ -390,7 +390,7 @@ var
   sValue:string;
   FInts:OleVariant;
   ReceiveItemInfo:OleVariant;
-  i,j,k:integer;
+  i,j{,k}:integer;
   Str:string;
   SBPos,EBPos:integer;
   ls,ls2,ls3,ls4,ls5,ls7,ls8,ls9:tstrings;
@@ -400,39 +400,35 @@ var
   sHistogramFile:string;
   strList:TStrings;
   Message_Control_ID:string;
-  Query_Target:String;
-  ORF:String;
+  //Query_Target:String;
+  //ORF:String;
 
-  lls:TStrings;
-  UniConnection1:TUniConnection;
-  UniQuery1:TUniQuery;
+  //lls:TStrings;
+  //UniConnection1:TUniConnection;
+  //UniQuery1:TUniQuery;
 
-  patientname:String;
-  sex:String;
-  age:String;
-  AGEUNIT:String;
-  report_date:String;//申请时间
-  deptname:String;//申请科室
-  check_doctor:String;//申请医生
-  His_Unid:String;
-  s1:String;
-  His_ItemId:String;
-  ItemList: TStrings;
+  //patientname:String;
+  //sex:String;
+  //age:String;
+  //AGEUNIT:String;
+  //report_date:String;//申请时间
+  //deptname:String;//申请科室
+  //check_doctor:String;//申请医生
+  //His_Unid:String;
+  //s1:String;
+  //His_ItemId:String;
+  //ItemList: TStrings;
 
-  Conn:TADOConnection;
-  AdoQry:TAdoQuery;
+  //Conn:TADOConnection;
+  //AdoQry:TAdoQuery;
   
-  MsgType:TMsgType;
-
-  aJson:ISuperObject;
-  aSuperArray: TSuperArray;
+  //MsgType:TMsgType;
 
   r_Barcode:String;
   r_patientname:String;
   r_sex:String;
   r_age:String;
   r_check_doctor:String;//申请医生
-  r_His_Unid:String;
 begin
   if not if_test then Str:=Socket.ReceiveText;
   if FS205_Chinese then Str:=UTF8Decode(Str);//解决【飞测FS-205】中文乱码问题
@@ -454,10 +450,10 @@ begin
 
     EBPos:=pos(#$1C#$0D,rfm);
 
-    if (pos(#$0D'QRD|',rfm2)>0)and(pos(#$0D'QRF|',rfm2)>0) then MsgType:=QRY else MsgType:=ORU;
+    //if (pos(#$0D'QRD|',rfm2)>0)and(pos(#$0D'QRF|',rfm2)>0) then MsgType:=QRY else MsgType:=ORU;
 
-    case MsgType of
-      QRY: begin
+    //case MsgType of
+      {QRY: begin
         if trim(HisConnStr)='' then continue;
         
         ls:=TStringList.Create;
@@ -582,8 +578,8 @@ begin
              'OBR|||||||||||||||'+deptname+'|'+check_doctor+#$0D+
              #$1C#$0D;
         Socket.SendText(ORF);
-      end;
-      ORU: begin
+      end;//}
+      //ORU: begin
         ls:=TStringList.Create;
         ExtractStrings([#$D],[],Pchar(rfm2),ls);
 
@@ -594,7 +590,6 @@ begin
         r_sex:='';
         r_age:='';
         r_check_doctor:='';//申请医生
-        r_His_Unid:='';
 
         ReceiveItemInfo:=VarArrayCreate([0,ls.Count-1],varVariant);
 
@@ -615,7 +610,6 @@ begin
             if ls9.Count>5 then r_patientname:=ls9[5];
             if ls9.Count>8 then r_sex:=ls9[8];
             if ls9.Count>7 then r_age:=ls9[7];
-            if ls9.Count>6 then r_His_Unid:=ls9[6];
             ls9.Free;
           end;
 
@@ -728,7 +722,7 @@ begin
             ifRecLog,true,'常规',
             r_Barcode,
             EquipUnid,
-            r_His_Unid,'','','',
+            '','','','',
             -1,-1,-1,-1,
             -1,-1,-1,-1,
             false,false,false,false);
@@ -740,8 +734,8 @@ begin
           //===================================ACK^R01===GMD-S600此域必须为ACK.KLite8使用ACK^R01确认没问题,需测试ACK能否适用于KLite8
           Socket.SendText(#$0B+'MSH|^~$&|||||||ACK|1|P|2.4||||0||ASCII|||'+#$0D+'MSA|AA|'+Message_Control_ID+'|message accepted|||0|'+#$0D#$1C#$0D);
         end;
-      end;
-    end;
+      //end;
+    //end;
   end;
 end;
 
