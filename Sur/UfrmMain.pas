@@ -111,6 +111,7 @@ var
   FS205_Chinese:boolean;
   BS300_Rerun:boolean;
   HisConnStr:String;
+  CM_Category_Message:String;//响应消息类型
 
   RFM:STRING;       //返回数据
   hnd:integer;
@@ -235,6 +236,7 @@ begin
   ifKLite8:=ini.readBool(IniSection,'KLite8响应',false);
   Line_Patient_ID:=ini.ReadString(IniSection,'联机号所在行','');
   No_Patient_ID:=ini.ReadInteger(IniSection,'联机号位',3);
+  CM_Category_Message:=ini.ReadString(IniSection,'响应消息类型','');
 
   FS205_Chinese:=ini.readBool(IniSection,'中文乱码解码',false);
   BS300_Rerun:=ini.readBool(IniSection,'处理BS300重做',false);
@@ -329,6 +331,7 @@ begin
       '调试日志'+#2+'CheckListBox'+#2+#2+'0'+#2+'注:强烈建议在正常运行时关闭'+#2+#3+
       '设备唯一编号'+#2+'Edit'+#2+#2+'1'+#2+#2+#3+
       'KLite8响应'+#2+'CheckListBox'+#2+#2+'1'+#2+#2+#3+
+      '响应消息类型'+#2+'Combobox'+#2+'ACK^R01'+#13+'ACK'+#2+'1'+#2+#2+#3+
       '联机号所在行'+#2+'Combobox'+#2+'PID'+#13+'OBR'+#2+'1'+#2+#2+#3+
       '联机号位'+#2+'Edit'+#2+#2+'1'+#2+'PID或OBR行用垂线分隔,从0开始,第几位'+#2+#3+
       '中文乱码解码'+#2+'CheckListBox'+#2+#2+'1'+#2+'判断依据:中文及特殊字符(如μ)是否显示正常'+#2+#3+
@@ -731,8 +734,7 @@ begin
 
         if ifKLite8 then
         begin
-          //===================================ACK^R01===GMD-S600此域必须为ACK.KLite8使用ACK^R01确认没问题,需测试ACK能否适用于KLite8
-          Socket.SendText(#$0B+'MSH|^~$&|||||||ACK|1|P|2.4||||0||ASCII|||'+#$0D+'MSA|AA|'+Message_Control_ID+'|message accepted|||0|'+#$0D#$1C#$0D);
+          Socket.SendText(#$0B+'MSH|^~$&|||||||'+CM_Category_Message+'|1|P|2.4||||0||ASCII|||'+#$0D+'MSA|AA|'+Message_Control_ID+'|message accepted|||0|'+#$0D#$1C#$0D);
         end;
       //end;
     //end;
