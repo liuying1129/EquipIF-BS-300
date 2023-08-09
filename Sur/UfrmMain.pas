@@ -110,6 +110,7 @@ var
   No_Patient_ID:integer;
   FS205_Chinese:boolean;
   BS300_Rerun:boolean;
+  Discard_Qualitative:boolean;//丢弃逗号分隔的定性结果
   HisConnStr:String;
   CM_Category_Message:String;//响应消息类型
 
@@ -240,6 +241,7 @@ begin
 
   FS205_Chinese:=ini.readBool(IniSection,'中文乱码解码',false);
   BS300_Rerun:=ini.readBool(IniSection,'处理BS300重做',false);
+  Discard_Qualitative:=ini.readBool(IniSection,'丢弃逗号分隔的定性结果',false);
 
   GroupName:=trim(ini.ReadString(IniSection,'工作组',''));
   EquipChar:=trim(uppercase(ini.ReadString(IniSection,'仪器字母','')));//读出来是大写就万无一失了
@@ -336,6 +338,7 @@ begin
       '联机号位'+#2+'Edit'+#2+#2+'1'+#2+'PID或OBR行用垂线分隔,从0开始,第几位'+#2+#3+
       '中文乱码解码'+#2+'CheckListBox'+#2+#2+'1'+#2+'判断依据:中文及特殊字符(如μ)是否显示正常'+#2+#3+
       '处理BS300重做'+#2+'CheckListBox'+#2+#2+'1'+#2+#2+#3+
+      '丢弃逗号分隔的定性结果'+#2+'CheckListBox'+#2+#2+'1'+#2+'iFlash-3000结果【2.05,无反应性】'+#2+#3+
       '连接HIS数据库'+#2+'UniConn'+#2+#2+'1'+#2+'Oracle Server格式:IP:Port:SID'+#2+#3+
       '高值质控联机号'+#2+'Edit'+#2+#2+'2'+#2+#2+#3+
       '常值质控联机号'+#2+'Edit'+#2+#2+'2'+#2+#2+#3+
@@ -646,6 +649,9 @@ begin
               ls7:=StrToList(sValue,'^');
               if ls7.Count>2 then sValue:=trim(ls7[1]+' '+ls7[2]);
               ls7.Free;
+
+              //iFlash-3000.例如,结果为【2.05,无反应性】,只取逗号前的2.05
+              if Discard_Qualitative and(pos(',',sValue)>0) then sValue:=copy(sValue,1,pos(',',sValue)-1);
             end;
 
             //图片处理 strat
