@@ -13,6 +13,7 @@ KLite8响应：不勾选
 处理BS300重做：不勾选
 
 联机标识：
+五分类模式：
 6690-2^WBC^LN
 770-8^NEU%^LN
 736-9^LYM%^LN
@@ -51,3 +52,9 @@ KLite8响应：不勾选
 12151^WBC DIFF Scattergram. LS-MS BMP^99MRC
 12152^WBC DIFF Scattergram. LS-HS BMP^99MRC
 12153^WBC DIFF Scattergram. HS-MS BMP^99MRC
+
+三分类模式：
+20482-6^GRAN%^LN
+32155-4^MID%^LN
+19023-1^GRAN#^LN
+32154-7^MID#^LN
