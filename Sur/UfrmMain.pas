@@ -652,6 +652,14 @@ begin
 
               //iFlash-3000.例如,结果为【2.05,无反应性】,只取逗号前的2.05
               if Discard_Qualitative and(pos(',',sValue)>0) then sValue:=copy(sValue,1,pos(',',sValue)-1);
+
+              //迈瑞EU-5300 begin
+              if(pos(':\E\',sValue)>0)and(rightstr(sValue,4)='.JPG')then//表示结果是图片路径
+              begin
+                sHistogramFile:=StringReplace(sValue,'\E\','\',[rfReplaceAll]);
+                sValue:='';
+              end;
+              //迈瑞EU-5300 end
             end;
 
             //图片处理 strat
