@@ -439,7 +439,7 @@ begin
   if not if_test then Str:=Socket.ReceiveText;
   if FS205_Chinese then Str:=UTF8Decode(Str);//解决【飞测FS-205】中文乱码问题
   
-  if length(memo1.Lines.Text)>=60000 then memo1.Lines.Clear;//memo只能接受64K个字符
+  if length(memo1.Lines.Text)>=1000000 then memo1.Lines.Clear;//memo在win98只能接受64K个字符,在win2000无限制
   memo1.Lines.Add(Str);
 
   rfm:=rfm+Str;
