@@ -644,6 +644,8 @@ begin
               sValue:=ls2[5];
               sValue:=StringReplace(sValue,'¡ü','',[rfReplaceAll, rfIgnoreCase]);//·É²âFS-205
               sValue:=StringReplace(sValue,'¡ý','',[rfReplaceAll, rfIgnoreCase]);//·É²âFS-205
+              sValue:=StringReplace(sValue,'mg/L','',[rfReplaceAll, rfIgnoreCase]);//EU-5300
+              sValue:=StringReplace(sValue,'mmol/L','',[rfReplaceAll, rfIgnoreCase]);//EU-5300
 
               //FUS2000
               ls7:=StrToList(sValue,'^');
