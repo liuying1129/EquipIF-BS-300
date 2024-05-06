@@ -608,6 +608,8 @@ begin
             ls5.Free;
           end;
 
+          DtlStr:='';
+          sValue:='';
           if uppercase(copy(trim(ls[i]),1,4))='PID|' then
           begin
             if Line_Patient_ID='PID' then SpecNo:=ls[i];
@@ -616,6 +618,13 @@ begin
             if ls9.Count>5 then r_patientname:=ls9[5];
             if ls9.Count>8 then r_sex:=ls9[8];
             if ls9.Count>7 then r_age:=ls9[7];
+
+            if ls9.Count>26 then//阴道分泌物检测RT-F600
+            begin
+              DtlStr:='结果分析提示';
+              sValue:=ls9[26];
+            end;
+
             ls9.Free;
           end;
 
@@ -630,8 +639,6 @@ begin
             ls3.Free;
           end;
 
-          DtlStr:='';
-          sValue:='';
           sHistogramFile:='';
           if uppercase(copy(trim(ls[i]),1,4))='OBX|' then
           begin
