@@ -69,6 +69,7 @@ type
     { Private declarations }
     procedure UpdateConfig;{配置文件生效}
     function MakeDBConn:boolean;
+    function ifQC(ASampleData: String): boolean;
   public
     { Public declarations }
   end;
@@ -435,6 +436,8 @@ var
   r_sex:String;
   r_age:String;
   r_check_doctor:String;//申请医生
+
+  bQC:boolean;
 begin
   if not if_test then Str:=Socket.ReceiveText;
   if FS205_Chinese then Str:=UTF8Decode(Str);//解决【飞测FS-205】中文乱码问题
@@ -455,6 +458,8 @@ begin
     delete(rfm,1,EBPos+1);
 
     EBPos:=pos(#$1C#$0D,rfm);
+
+    bQC:=ifQC(rfm2);//BS-800.判断是否质控数据
 
     //if (pos(#$0D'QRD|',rfm2)>0)and(pos(#$0D'QRF|',rfm2)>0) then MsgType:=QRY else MsgType:=ORU;
 
@@ -738,7 +743,7 @@ begin
         SpecNo:=rightstr('0000'+SpecNo,4);
         //联机号end
 
-        if bRegister then
+        if bRegister and(not bQC) then//丢弃BS-800的质控数据
         begin
           FInts :=CreateOleObject('Data2LisSvr.Data2Lis');
           FInts.fData2Lis(ReceiveItemInfo,(SpecNo),CheckDate,
@@ -826,6 +831,27 @@ begin
   except
     showmessage('连接服务器失败!');
   end;
+end;
+
+function TfrmMain.ifQC(ASampleData: String): boolean;
+var
+  ls,ls2:TStrings;
+  i:Integer;
+begin
+  result:=false;
+  
+  ls:=TStringList.Create;
+  ExtractStrings([#$D],[],Pchar(ASampleData),ls);
+  for  i:=0  to ls.Count-1 do
+  begin
+    if uppercase(copy(trim(ls[i]),1,4))='MSH|' then
+    begin
+      ls2:=StrToList(ls[i],'|');
+      if(ls2.Count>15)and(ls2[15]='2') then result:=true;
+      ls2.Free;
+    end;
+  end;
+  ls.Free;
 end;
 
 initialization
