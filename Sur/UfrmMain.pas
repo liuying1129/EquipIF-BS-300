@@ -264,6 +264,7 @@ begin
 
   ifDuplex:=ini.readBool(IniSection,'双向',false);
   DuplexDll:=ini.ReadString(IniSection,'双向DLL文件名','');
+  if UpperCase(RightStr(DuplexDll,4))<>'.DLL' THEN DuplexDll:=DuplexDll+'.dll';
   
   ini.Free;
 
