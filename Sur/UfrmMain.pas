@@ -86,7 +86,7 @@ var
 
 implementation
 
-uses ucommfunction;
+uses ucommfunction, superobject;
 
 const
   CR=#$D+#$A;
@@ -117,8 +117,9 @@ var
   FS205_Chinese:boolean;
   BS300_Rerun:boolean;
   Discard_Qualitative:boolean;//丢弃逗号分隔的定性结果
-  HisConnStr:String;
   CM_Category_Message:String;//响应消息类型
+  ifDuplex:boolean;
+  DuplexDll:String;
 
   RFM:STRING;       //返回数据
   hnd:integer;
@@ -261,7 +262,8 @@ begin
   QuaContSpecNo:=ini.ReadString(IniSection,'常值质控联机号','9998');
   QuaContSpecNoD:=ini.ReadString(IniSection,'低值质控联机号','9997');
 
-  HisConnStr:=ini.ReadString(IniSection,'连接HIS数据库','');
+  ifDuplex:=ini.readBool(IniSection,'双向',false);
+  DuplexDll:=ini.ReadString(IniSection,'双向DLL文件名','');
   
   ini.Free;
 
@@ -345,7 +347,8 @@ begin
       '中文乱码解码'+#2+'CheckListBox'+#2+#2+'1'+#2+'判断依据:中文及特殊字符(如μ)是否显示正常'+#2+#3+
       '处理BS300重做'+#2+'CheckListBox'+#2+#2+'1'+#2+#2+#3+
       '丢弃逗号分隔的定性结果'+#2+'CheckListBox'+#2+#2+'1'+#2+'iFlash-3000结果【2.05,无反应性】'+#2+#3+
-      '连接HIS数据库'+#2+'UniConn'+#2+#2+'1'+#2+'Oracle Server格式:IP:Port:SID'+#2+#3+
+      '双向'+#2+'CheckListBox'+#2+#2+'1'+#2+#2+#3+
+      '双向DLL文件名'+#2+'Edit'+#2+#2+'1'+#2+#2+#3+
       '高值质控联机号'+#2+'Edit'+#2+#2+'2'+#2+#2+#3+
       '常值质控联机号'+#2+'Edit'+#2+#2+'2'+#2+#2+#3+
       '低值质控联机号'+#2+'Edit'+#2+#2+'2'+#2+#2;
@@ -413,37 +416,23 @@ var
   strList:TStrings;
   Message_Control_ID:string;
   Sample_ID:string;
-  //Query_Target:String;
   ORF:String;
 
-  //lls:TStrings;
-  //UniConnection1:TUniConnection;
-  //UniQuery1:TUniQuery;
-
-  //patientname:String;
-  //sex:String;
-  //age:String;
-  //AGEUNIT:String;
-  //report_date:String;//申请时间
-  //deptname:String;//申请科室
-  //check_doctor:String;//申请医生
-  //His_Unid:String;
-  //s1:String;
-  //His_ItemId:String;
-  //ItemList: TStrings;
-
-  //Conn:TADOConnection;
-  //AdoQry:TAdoQuery;
-  
-  //MsgType:TMsgType;
-
-  r_Barcode:String;
+  r_Barcode:String;//从结果消息中获取的条码号
   r_patientname:String;
   r_sex:String;
   r_age:String;
+  r_deptname:String;//申请科室
   r_check_doctor:String;//申请医生
+  r_report_date:String;//申请时间
+  r_his_unid:String;
 
   HL7_Msg_Type:THL7_Msg_Type;
+
+  HLIB:THANDLE;
+  DLLFUNC: function(const ABarcode:ShortString;AifShowMsgDlg:Boolean):PChar; stdcall;
+  pRequestInfo:PChar;
+  aJson: ISuperObject;
 begin
   if not if_test then Str:=Socket.ReceiveText;
   if FS205_Chinese then Str:=UTF8Decode(Str);//解决【飞测FS-205】中文乱码问题
@@ -490,9 +479,9 @@ begin
       end;
       ls11.Free;
 
-      //进样模式（Take Mode）: 取值为以下枚举：“O” - 开放“A” - 自动“C” – 封闭 'OBX|1|IS|08001^Take Mode^99MRC||A||||||F'+#$0D+
-      //血样模式（Blood Mode）: W- 全血、P - 预稀释、B – 体液、Q – 质控  'OBX|2|IS|08002^Blood Mode^99MRC||W||||||F'+#$0D+
-      //测量模式（Test Mode）: “CBC”“CBC+DIFF”“CBC+RET”“CBC+NRBC”“CBC+DIFF+RET”“CBC+DIFF+NRBC”“CBC+DIFF+RET+NRBC”“RET”“CRP”“CBC+DIFF+CRP”
+      //进样模式（Take Mode）: O-开放、A-自动、C-封闭//OBX|1|IS|08001^Take Mode^99MRC||A||||||F'+#$0D+
+      //血样模式（Blood Mode）: W-全血、P-预稀释、B-体液、Q-质控
+      //测量模式（Test Mode）: CBC、CBC+DIFF、CBC+RET、CBC+NRBC、CBC+DIFF+RET、CBC+DIFF+NRBC、CBC+DIFF+RET+NRBC、RET、CRP、CBC+DIFF+CRP
       ORF:=#$0B+
            'MSH|^~\&|||||||ORR^O02|1|P|2.3.1'+#$0D+//一定要2.3.1（与收到的MSH一致）   
            'MSA|AA|'+Message_Control_ID+#$0D+
@@ -503,184 +492,6 @@ begin
       Socket.SendText(ORF);
       if length(memo1.Lines.Text)>=1000000 then memo1.Lines.Clear;//memo在win98只能接受64K个字符,在win2000无限制
       memo1.Lines.Add(ORF);
-//           'OBX|1|IS|08001^Take Mode^99MRC||A||||||F'+#$0D+
-//           'OBR||271'+#$0D+//测试该样本编号123是否由LIS定义,LIS返回结果的样本号是123？
-
-      {IdHTTP_Tmp1:=TIdHTTP.Create(nil);
-
-      SSLIO := TIdSSLIOHandlerSocket.Create(nil);
-      SSLIO.SSLOptions.Method:=sslvSSLv23;//sslvSSLv2, sslvSSLv23, sslvSSLv3, sslvTLSv1
-
-      IdHTTP_Tmp1.IOHandler:=SSLIO;
-
-      RespData:=TStringStream.Create('');
-
-      try
-        IdHTTP_Tmp1.get(gBASE_URL+'?orgCode='+OrgCode+'&barCode='+(Sender as TLabeledEdit).Text,RespData);
-        ss:=UTF8Decode(RespData.DataString);//返回信息//IdHTTP是同步的
-      except
-        on E:Exception do
-        begin
-          RespData.Free;
-          SSLIO.Close;
-          IdHTTP_Tmp1.Disconnect;
-          FreeAndNil(SSLIO);
-          FreeAndNil(IdHTTP_Tmp1);
-          (Sender as TLabeledEdit).Clear;
-          (Sender as TLabeledEdit).Enabled:=true;
-          if (Sender as TLabeledEdit).CanFocus then (Sender as TLabeledEdit).SetFocus;
-          MESSAGEDLG('请求条码出错:'+E.Message,mtError,[mbOK],0);
-          exit;
-        end;
-      end;
-
-      RespData.Free;
-      SSLIO.Close;
-      IdHTTP_Tmp1.Disconnect;
-      FreeAndNil(SSLIO);
-      FreeAndNil(IdHTTP_Tmp1);
-
-      aJson:=SO(ss);
-
-      if aJson.AsObject.I['code']<>200 then
-      begin
-        (Sender as TLabeledEdit).Clear;
-        (Sender as TLabeledEdit).Enabled:=true;
-        if (Sender as TLabeledEdit).CanFocus then (Sender as TLabeledEdit).SetFocus;
-        MESSAGEDLG(ss,mtError,[mbOK],0);
-        exit;
-      end;
-
-      if aJson['data.patientName']<>nil then patientname:=aJson['data.patientName'].AsString;
-      if aJson['data.sex']<>nil then sex:=aJson['data.sex'].AsString;
-      if aJson['data.age']<>nil then age:=aJson['data.age'].AsString;
-      if aJson['data.applyDeptName']<>nil then deptname:=aJson['data.applyDeptName'].AsString;
-      if aJson['data.doctorName']<>nil then check_doctor:=aJson['data.doctorName'].AsString;
-      if aJson['data.applyDateStr']<>nil then report_date:=aJson['data.applyDateStr'].AsString;
-      if aJson['data.visitSerialNo']<>nil then His_Unid:=aJson['data.visitSerialNo'].AsString;//}
-
-        {if trim(HisConnStr)='' then continue;
-        
-
-        for  i:=0  to ls.Count-1 do
-        begin
-          if uppercase(copy(trim(ls[i]),1,4))='MSH|' then
-          begin
-            ls5:=StrToList(ls[i],'|');
-            if ls5.Count>9 then Message_Control_ID:=ls5[9];
-            ls5.Free;
-          end;
-
-          if uppercase(copy(trim(ls[i]),1,4))='QRD|' then
-          begin
-            ls5:=StrToList(ls[i],'|');
-            if ls5.Count>8 then Query_Target:=ls5[8];
-            ls5.Free;
-          end;        
-        end;
-
-        ls.Free;
-
-        //读HIS数据库
-        lls:=TStringList.Create;
-        lls.Delimiter:=';';
-        lls.DelimitedText:=HisConnStr;
-      
-        UniConnection1:=TUniConnection.Create(nil);
-        UniConnection1.ProviderName:=lls.Values['ProviderName'];
-        UniConnection1.SpecificOptions.Values['Direct']:='True';
-        UniConnection1.LoginPrompt:=false;
-        UniConnection1.Username:=lls.Values['Username'];
-        UniConnection1.Password:=lls.Values['Password'];
-        UniConnection1.Server:=lls.Values['Server'];
-
-        lls.Free;
-
-        Try
-          UniConnection1.Connect;
-        except
-          on E:Exception do
-          begin
-            memo1.Lines.Add('连接HIS数据库失败:'+E.Message);
-          end;
-        end;
-
-        if not UniConnection1.Connected then begin UniConnection1.Free;continue;end;
-
-        UniQuery1:=TUniQuery.Create(nil);
-        UniQuery1.Connection:=UniConnection1;
-        UniQuery1.SQL.Text:='select wm_concat(distinct ORDER_ID) as ORDER_ID from LIS_REQUEST where BARCODE='''+copy(Query_Target,Pos('^',Query_Target)+1,MaxInt)+''' ';//用逗号连接HIS组合项目代码
-        Try
-          UniQuery1.Open;
-        except
-          on E:Exception do
-          begin
-            memo1.Lines.Add('查询HIS组合项目失败:'+E.Message);
-          end;
-        end;
-        
-        if not UniQuery1.Active then begin UniQuery1.Free;UniConnection1.Free;continue;end;
-        if UniQuery1.RecordCount<=0 then begin UniQuery1.Free;UniConnection1.Free;continue;end;
-
-        aJson:=SO(GetLisCombItem(PChar(ConnectString),PChar(UniQuery1.fieldbyname('ORDER_ID').AsString),PChar(EquipChar),'PEIS'));
-
-        if not aJson.AsObject.Exists('项目信息') then begin UniQuery1.Free;UniConnection1.Free;continue;end;
-        aSuperArray:=aJson['项目信息'].AsArray;
-  
-        ItemList:=TStringList.Create;
-        for k:=0 to aSuperArray.Length-1 do
-        begin
-          ItemList.Add(aSuperArray[k]['组合项目备注'].AsString);//利用组合项目的【说明】字段，1-全部、0-沉渣、2-干化学
-        end;
-
-        //组合项目,1-全部、0-沉渣、2-干化学
-        if (ItemList.IndexOf('1')>=0) or ((ItemList.IndexOf('0')>=0) and (ItemList.IndexOf('2')>=0)) then s1:='1'
-          else if ItemList.IndexOf('0')>=0 then s1:='0'
-            else if ItemList.IndexOf('2')>=0 then s1:='2'
-              else begin ItemList.Free;UniQuery1.Free;UniConnection1.Free;continue;end;
-
-        ItemList.Free;
-
-        UniQuery1.Close;
-        UniQuery1.SQL.Clear;
-        UniQuery1.SQL.Text:='select top 1 * from LIS_REQUEST where BARCODE='''+copy(Query_Target,Pos('^',Query_Target)+1,MaxInt)+''' ';//用逗号连接HIS组合项目代码
-        Try
-          UniQuery1.Open;
-        except
-          on E:Exception do
-          begin
-            memo1.Lines.Add('查询HIS受检者信息失败:'+E.Message);
-          end;
-        end;
-
-        if not UniQuery1.Active then begin UniQuery1.Free;UniConnection1.Free;continue;end;
-        if UniQuery1.RecordCount<=0 then begin UniQuery1.Free;UniConnection1.Free;continue;end;
-
-        patientname:=UniQuery1.fieldbyname('NAME').AsString;//患者姓名
-        //患者性别
-        if '1'=UniQuery1.fieldbyname('SEX').AsString then sex:='男'
-          else if '2'=UniQuery1.fieldbyname('SEX').AsString then sex:='女'
-            else if '3'=UniQuery1.fieldbyname('SEX').AsString then sex:='不详';
-        if UniQuery1.fieldbyname('AGEUNIT').AsString='Y' THEN AGEUNIT:='岁'
-          else if UniQuery1.fieldbyname('AGEUNIT').AsString='N' THEN AGEUNIT:='月';
-        age:=UniQuery1.fieldbyname('AGE').AsString+AGEUNIT;//患者年龄
-        report_date:=UniQuery1.fieldbyname('WRITE_TIME').AsString;//申请时间
-        deptname:=UniQuery1.fieldbyname('REQDEPT').AsString;//申请科室
-        check_doctor:=UniQuery1.fieldbyname('WRITE_NAME').AsString;//申请医生
-        His_Unid:=UniQuery1.fieldbyname('REG_ID').AsString;//体检号
-
-        UniQuery1.Free;
-        UniConnection1.Free;
-
-        ORF:=#$0B+
-             'MSH|^~\&|||||||ORF|1|P|2.3'+#$0D+
-             'MSA|AA|'+Message_Control_ID+#$0D+
-             'QRD||R|I||||20^LI|'+Query_Target+'|DEM|ALL'+#$0D+
-             'PID|||'+Query_Target+'||'+s1+'|'+patientname+'|'+His_Unid+'|'+age+'|'+sex+#$0D+//PID-3此域包含用于标识患者身份的唯一标识号。这里是样本号和条码。是不是返回结果的样本号？为空会怎么样？//PID-5测试模式“1”or”0”or”2”(全部、沉渣、干化学)
-             'PV1|||'+#$0D+
-             'OBR|||||||||||||||'+deptname+'|'+check_doctor+#$0D+
-             #$1C#$0D;
-        Socket.SendText(ORF);}
     end;
     
     if hmtSampleResult in HL7_Msg_Type then
@@ -694,7 +505,10 @@ begin
       r_patientname:='';
       r_sex:='';
       r_age:='';
+      r_deptname:='';//申请科室
       r_check_doctor:='';//申请医生
+      r_report_date:='';//申请时间
+      r_his_unid:='';
 
       ReceiveItemInfo:=VarArrayCreate([0,ls.Count-1],varVariant);
 
@@ -713,7 +527,6 @@ begin
         begin
           if Line_Patient_ID='PID' then SpecNo:=ls[i];
           ls9:=StrToList(ls[i],'|');
-          if ls9.Count>4 then r_Barcode:=ls9[4];
           if ls9.Count>5 then r_patientname:=ls9[5];
           if ls9.Count>8 then r_sex:=ls9[8];
           if ls9.Count>7 then r_age:=ls9[7];
@@ -833,16 +646,43 @@ begin
       if ls8.Count>No_Patient_ID then SpecNo:=ls8[No_Patient_ID];
       ls8.Free;
       SpecNo:=trim(StringReplace(SpecNo,'^R','',[rfReplaceAll, rfIgnoreCase]));//KLite8
+      if ifDuplex then r_Barcode:=SpecNo;
       if SpecNo='' then SpecNo:=formatdatetime('nnss',now);
       SpecNo:=rightstr('0000'+SpecNo,4);
       //联机号end
+
+      //通过r_Barcode(从结果消息中获取的条码号)获取HIS/PEIS的患者基本信息 begin
+      if ifDuplex then
+      begin
+        HLIB:=LOADLIBRARY(PChar(DuplexDll));
+        IF HLIB<>0 THEN
+        BEGIN
+          @DLLFUNC:=GETPROCADDRESS(HLIB,'GetRequestInfo');
+          IF @DLLFUNC<>NIL THEN
+          BEGIN
+            pRequestInfo:=DLLFUNC(r_Barcode,False);
+          END;
+        END;
+        FREELIBRARY(HLIB);
+
+        aJson:=SO(pRequestInfo);
+        if aJson['患者姓名']<>nil then r_patientname:=aJson['患者姓名'].AsString;
+        if aJson['患者性别']<>nil then r_sex:=aJson['患者性别'].AsString;
+        if aJson['患者年龄']<>nil then r_age:=aJson['患者年龄'].AsString;
+        if aJson['申请科室']<>nil then r_deptname:=aJson['申请科室'].AsString;
+        if aJson['申请医生']<>nil then r_check_doctor:=aJson['申请医生'].AsString;
+        if aJson['申请日期']<>nil then r_report_date:=aJson['申请日期'].AsString;
+        if aJson['外部系统唯一编号']<>nil then r_his_unid:=aJson['外部系统唯一编号'].AsString;
+        aJson:=nil;
+      end;
+      //通过r_Barcode(从结果消息中获取的条码号)获取HIS/PEIS的患者基本信息 end
 
       if bRegister then
       begin
         FInts :=CreateOleObject('Data2LisSvr.Data2Lis');
         FInts.fData2Lis(ReceiveItemInfo,(SpecNo),CheckDate,
           (GroupName),(SpecType),(SpecStatus),(EquipChar),
-          (CombinID),r_patientname+'{!@#}'+r_sex+'{!@#}{!@#}'+r_age+'{!@#}{!@#}{!@#}'+r_check_doctor,(LisFormCaption),(ConnectString),
+          (CombinID),r_patientname+'{!@#}'+r_sex+'{!@#}{!@#}'+r_age+'{!@#}{!@#}'+r_deptname+'{!@#}'+r_check_doctor+'{!@#}{!@#}{!@#}{!@#}{!@#}{!@#}'+r_report_date+'{!@#}'+r_his_unid,(LisFormCaption),(ConnectString),
           (QuaContSpecNoG),(QuaContSpecNo),(QuaContSpecNoD),'',
           ifRecLog,true,'常规',
           r_Barcode,
