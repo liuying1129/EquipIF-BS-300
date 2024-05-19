@@ -490,7 +490,7 @@ begin
            'OBX|1|IS|08002^Blood Mode^99MRC||W||||||F'+#$0D+
            'OBX|2|IS|08003^Test Mode^99MRC||CBC+DIFF||||||F'+#$0D+
            #$1C#$0D;
-      Socket.SendText(ORF);
+      if not if_test then Socket.SendText(ORF);
       if length(memo1.Lines.Text)>=1000000 then memo1.Lines.Clear;//memo在win98只能接受64K个字符,在win2000无限制
       memo1.Lines.Add(ORF);
     end;
