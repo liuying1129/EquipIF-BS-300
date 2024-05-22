@@ -522,6 +522,7 @@ begin
               else if pos('¸ßÖµ',ls43[13])>0 then SpecNo:='9999'
                 else SpecNo:='9998';
           end;
+          if ls43.Count>7 then CheckDate:=copy(ls43[7],1,4)+'-'+copy(ls43[7],5,2)+'-'+copy(ls43[7],7,2)+' '+copy(ls43[7],9,2)+ifThen(copy(ls43[7],9,2)<>'',':')+copy(ls43[7],11,2);
           ls43.Free;
           
           ReceiveItemInfo:=VarArrayCreate([0,0],varVariant);
@@ -529,8 +530,8 @@ begin
           if bRegister then
           begin
             FInts :=CreateOleObject('Data2LisSvr.Data2Lis');
-            FInts.fData2Lis(ReceiveItemInfo,(SpecNo),'',
-              (''),(SpecType),(SpecStatus),(EquipChar),
+            FInts.fData2Lis(ReceiveItemInfo,(SpecNo),CheckDate,
+              (''),(SpecType),(''),(EquipChar),
               (''),'',(LisFormCaption),(ConnectString),
               (QuaContSpecNoG),(QuaContSpecNo),(QuaContSpecNoD),'',
               ifRecLog,true,'',
