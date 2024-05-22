@@ -118,7 +118,6 @@ var
   BS300_Rerun:boolean;
   Discard_Qualitative:boolean;//丢弃逗号分隔的定性结果
   CM_Category_Message:String;//响应消息类型
-  ifDuplex:boolean;
   DuplexDll:String;
 
   RFM:STRING;       //返回数据
@@ -262,7 +261,6 @@ begin
   QuaContSpecNo:=ini.ReadString(IniSection,'常值质控联机号','9998');
   QuaContSpecNoD:=ini.ReadString(IniSection,'低值质控联机号','9997');
 
-  ifDuplex:=ini.readBool(IniSection,'双向',false);
   DuplexDll:=ini.ReadString(IniSection,'双向DLL文件名','');
   if UpperCase(RightStr(DuplexDll,4))<>'.DLL' THEN DuplexDll:=DuplexDll+'.dll';
   
@@ -348,7 +346,6 @@ begin
       '中文乱码解码'+#2+'CheckListBox'+#2+#2+'1'+#2+'判断依据:中文及特殊字符(如μ)是否显示正常'+#2+#3+
       '处理BS300重做'+#2+'CheckListBox'+#2+#2+'1'+#2+#2+#3+
       '丢弃逗号分隔的定性结果'+#2+'CheckListBox'+#2+#2+'1'+#2+'iFlash-3000结果【2.05,无反应性】'+#2+#3+
-      '双向'+#2+'CheckListBox'+#2+#2+'1'+#2+#2+#3+
       '双向DLL文件名'+#2+'Edit'+#2+#2+'1'+#2+#2+#3+
       '高值质控联机号'+#2+'Edit'+#2+#2+'2'+#2+#2+#3+
       '常值质控联机号'+#2+'Edit'+#2+#2+'2'+#2+#2+#3+
@@ -406,10 +403,10 @@ var
   sValue:string;
   FInts:OleVariant;
   ReceiveItemInfo:OleVariant;
-  i,j,k:integer;
+  i,j,k,m:integer;
   Str:string;
   SBPos,EBPos:integer;
-  ls,ls2,ls3,ls4,ls5,ls7,ls8,ls9,ls11,ls22,ls33:tstrings;
+  ls,ls2,ls3,ls4,ls5,ls7,ls8,ls9,ls11,ls22,ls33,ls41,ls42,ls43:tstrings;
   DtlStr:string;
   CheckDate:string;
   sHistogramTemp:string;
@@ -434,6 +431,9 @@ var
   DLLFUNC: function(const ABarcode:ShortString;AifShowMsgDlg:Boolean):PChar; stdcall;
   pRequestInfo:PChar;
   aJson: ISuperObject;
+
+  ACK_MSH:String;
+  ACK:String;
 begin
   if not if_test then Str:=Socket.ReceiveText;
   if FS205_Chinese then Str:=UTF8Decode(Str);//解决【飞测FS-205】中文乱码问题
@@ -494,7 +494,59 @@ begin
       if length(memo1.Lines.Text)>=1000000 then memo1.Lines.Clear;//memo在win98只能接受64K个字符,在win2000无限制
       memo1.Lines.Add(ORF);
     end;
-    
+
+    if hmtQCResult in HL7_Msg_Type then
+    begin
+      ls41:=TStringList.Create;
+      ExtractStrings([#$D],[],Pchar(rfm2),ls41);
+
+      for  m:=0  to ls41.Count-1 do
+      begin
+        if uppercase(copy(trim(ls41[m]),1,4))='MSH|' then
+        begin
+          ls42:=StrToList(ls41[m],'|');
+          if ls42.Count>9 then Message_Control_ID:=ls42[9];
+          ls42.Free;
+          
+          ACK_MSH:=ls41[m];
+        end;
+        
+        if uppercase(copy(trim(ls41[m]),1,4))='OBR|' then
+        begin
+          ls43:=StrToList(ls41[m],'|');
+          if ls43.Count>3 then DtlStr:=ls43[3];
+          if ls43.Count>20 then sValue:=ls43[20];
+          if ls43.Count>13 then
+          begin
+            if pos('低值',ls43[13])>0 then SpecNo:='9997'
+              else if pos('高值',ls43[13])>0 then SpecNo:='9999'
+                else SpecNo:='9998';
+          end;
+          ls43.Free;
+          
+          ReceiveItemInfo:=VarArrayCreate([0,0],varVariant);
+          ReceiveItemInfo[0]:=VarArrayof([DtlStr,sValue,'','']);
+          if bRegister then
+          begin
+            FInts :=CreateOleObject('Data2LisSvr.Data2Lis');
+            FInts.fData2Lis(ReceiveItemInfo,(SpecNo),'',
+              (''),(SpecType),(SpecStatus),(EquipChar),
+              (''),'',(LisFormCaption),(ConnectString),
+              (QuaContSpecNoG),(QuaContSpecNo),(QuaContSpecNoD),'',
+              ifRecLog,true,'',
+              '',
+              EquipUnid,
+              '','','','',
+              -1,-1,-1,-1,
+              -1,-1,-1,-1,
+              false,false,false,false);
+            if not VarIsEmpty(FInts) then FInts:= unAssigned;
+          end;
+        end;
+      end;
+      ls41.Free;
+    end;
+        
     if hmtSampleResult in HL7_Msg_Type then
     begin
       ls:=TStringList.Create;
@@ -520,6 +572,8 @@ begin
           ls5:=StrToList(ls[i],'|');
           if ls5.Count>9 then Message_Control_ID:=ls5[9];
           ls5.Free;
+          
+          ACK_MSH:=ls[i];
         end;
 
         DtlStr:='';
@@ -647,35 +701,32 @@ begin
       if ls8.Count>No_Patient_ID then SpecNo:=ls8[No_Patient_ID];
       ls8.Free;
       SpecNo:=trim(StringReplace(SpecNo,'^R','',[rfReplaceAll, rfIgnoreCase]));//KLite8
-      if ifDuplex then r_Barcode:=SpecNo;
+      r_Barcode:=SpecNo;
       if SpecNo='' then SpecNo:=formatdatetime('nnss',now);
       SpecNo:=rightstr('0000'+SpecNo,4);
       //联机号end
 
       //通过r_Barcode(从结果消息中获取的条码号)获取HIS/PEIS的患者基本信息 begin
-      if ifDuplex then
-      begin
-        HLIB:=LOADLIBRARY(PChar(DuplexDll));
-        IF HLIB<>0 THEN
+      HLIB:=LOADLIBRARY(PChar(DuplexDll));
+      IF HLIB<>0 THEN
+      BEGIN
+        @DLLFUNC:=GETPROCADDRESS(HLIB,'GetRequestInfo');
+        IF @DLLFUNC<>NIL THEN
         BEGIN
-          @DLLFUNC:=GETPROCADDRESS(HLIB,'GetRequestInfo');
-          IF @DLLFUNC<>NIL THEN
-          BEGIN
-            pRequestInfo:=DLLFUNC(r_Barcode,False);
-          END;
+          pRequestInfo:=DLLFUNC(r_Barcode,False);
         END;
-        FREELIBRARY(HLIB);
+      END;
+      FREELIBRARY(HLIB);
 
-        aJson:=SO(pRequestInfo);
-        if aJson['患者姓名']<>nil then r_patientname:=aJson['患者姓名'].AsString;
-        if aJson['患者性别']<>nil then r_sex:=aJson['患者性别'].AsString;
-        if aJson['患者年龄']<>nil then r_age:=aJson['患者年龄'].AsString;
-        if aJson['申请科室']<>nil then r_deptname:=aJson['申请科室'].AsString;
-        if aJson['申请医生']<>nil then r_check_doctor:=aJson['申请医生'].AsString;
-        if aJson['申请日期']<>nil then r_report_date:=aJson['申请日期'].AsString;
-        if aJson['外部系统唯一编号']<>nil then r_his_unid:=aJson['外部系统唯一编号'].AsString;
-        aJson:=nil;
-      end;
+      aJson:=SO(pRequestInfo);
+      if aJson['患者姓名']<>nil then r_patientname:=aJson['患者姓名'].AsString;
+      if aJson['患者性别']<>nil then r_sex:=aJson['患者性别'].AsString;
+      if aJson['患者年龄']<>nil then r_age:=aJson['患者年龄'].AsString;
+      if aJson['申请科室']<>nil then r_deptname:=aJson['申请科室'].AsString;
+      if aJson['申请医生']<>nil then r_check_doctor:=aJson['申请医生'].AsString;
+      if aJson['申请日期']<>nil then r_report_date:=aJson['申请日期'].AsString;
+      if aJson['外部系统唯一编号']<>nil then r_his_unid:=aJson['外部系统唯一编号'].AsString;
+      aJson:=nil;
       //通过r_Barcode(从结果消息中获取的条码号)获取HIS/PEIS的患者基本信息 end
 
       if bRegister then
@@ -698,7 +749,15 @@ begin
 
     if (hmtResultMsg in HL7_Msg_Type)and ifKLite8 then
     begin
-      Socket.SendText(#$0B+'MSH|^~$&|||||||'+CM_Category_Message+'|1|P|2.4||||0||ASCII|||'+#$0D+'MSA|AA|'+Message_Control_ID+'|message accepted|||0|'+#$0D#$1C#$0D);
+      ACK_MSH:=TRIM(ACK_MSH);
+      ACK_MSH:=STRINGREPLACE(ACK_MSH,'|ORU^R01|','|'+CM_Category_Message+'|',[rfIgnoreCase]);
+      ACK_MSH:=STRINGREPLACE(ACK_MSH,'|ORU^R01^ORU_R01|','|'+CM_Category_Message+'|',[rfIgnoreCase]);//飞测FS205
+      ACK:=#$0B+
+           ACK_MSH+#$0D+
+           'MSA|AA|'+Message_Control_ID+'||||0|'+#$0D+
+           #$1C#$0D;
+      if not if_test then Socket.SendText(ACK);
+      //Socket.SendText(#$0B+'MSH|^~$&|||||||'+CM_Category_Message+'|1|P|2.4||||0||ASCII|||'+#$0D+'MSA|AA|'+Message_Control_ID+'|message accepted|||0|'+#$0D#$1C#$0D);
     end;
   end;
 end;
