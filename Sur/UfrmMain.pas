@@ -77,6 +77,7 @@ type
     procedure UpdateConfig;{配置文件生效}
     function MakeDBConn:boolean;
     function CheckMsgType(const AMsg: String): THL7_Msg_Type;
+    procedure PerlRegExAfterMatch(Sender: TObject);
   public
     { Public declarations }
   end;
@@ -86,7 +87,7 @@ var
 
 implementation
 
-uses ucommfunction, superobject;
+uses ucommfunction, superobject, PerlRegEx;
 
 const
   CR=#$D+#$A;
@@ -379,6 +380,7 @@ begin
   ls:=Tstringlist.Create;
   ls.LoadFromFile(OpenDialog1.FileName);
   rfm:=ls.Text;
+  if FS205_Chinese then rfm:=UTF8Decode(rfm);
   if_test:=true;
   ServerSocket1ClientRead(nil,nil);
   if_test:=false;
@@ -398,42 +400,9 @@ end;
 procedure TfrmMain.ServerSocket1ClientRead(Sender: TObject;
   Socket: TCustomWinSocket);
 var
-  SpecNo:string;
-  rfm2:string;
-  sValue:string;
-  FInts:OleVariant;
-  ReceiveItemInfo:OleVariant;
-  i,j,k,m:integer;
   Str:string;
-  SBPos,EBPos:integer;
-  ls,ls2,ls3,ls4,ls5,ls7,ls8,ls9,ls11,ls22,ls33,ls41,ls42,ls43:tstrings;
-  DtlStr:string;
-  CheckDate:string;
-  sHistogramTemp:string;
-  sHistogramFile:string;
-  strList:TStrings;
-  Message_Control_ID:string;
-  Sample_ID:string;
-  ORF:String;
-
-  r_Barcode:String;//从结果消息中获取的条码号
-  r_patientname:String;
-  r_sex:String;
-  r_age:String;
-  r_deptname:String;//申请科室
-  r_check_doctor:String;//申请医生
-  r_report_date:String;//申请时间
-  r_his_unid:String;
-
-  HL7_Msg_Type:THL7_Msg_Type;
-
-  HLIB:THANDLE;
-  DLLFUNC: function(const ABarcode:ShortString;AifShowMsgDlg:Boolean):PChar; stdcall;
-  pRequestInfo:PChar;
-  aJson: ISuperObject;
-
-  ACK_MSH:String;
-  ACK:String;
+  SBPos:integer;
+  PerlRegEx:TPerlRegEx;
 begin
   if not if_test then Str:=Socket.ReceiveText;
   if FS205_Chinese then Str:=UTF8Decode(Str);//解决【飞测FS-205】中文乱码问题
@@ -445,322 +414,25 @@ begin
   
   SBPos:=pos(#$0B,rfm);
   if SBPos<=0 then exit;
-  delete(rfm,1,SBPos-1);//保持头是第一个字符
+  delete(rfm,1,SBPos-1);//删除垃圾数据,避免RFM无限增长
 
-  EBPos:=pos(#$1C#$0D,rfm);
-  while EBPos>0 do
+  PerlRegEx:=TPerlRegEx.Create;
+  PerlRegEx.RegEx:=#$0B'[\s\S]*'#$1C#$0D;
+  PerlRegEx.Options:=PerlRegEx.Options+[preUnGreedy];//非贪婪模式,只匹配到第1次#$B开头及第1次$1C#$0D结尾的内容.否则,匹配到第1次#$B开头及最后1次$1C#$0D结尾的内容
+  PerlRegEx.OnMatch:=PerlRegExAfterMatch;//1个完整HL7消息
+  PerlRegEx.Replacement:='';//用空字符串替换匹配到的内容
+  PerlRegEx.Subject:=RFM;
+  if PerlRegEx.Match then
   begin
-    rfm2:=copy(rfm,1,EBPos+1);//1个标本结果
-    delete(rfm,1,EBPos+1);
-
-    EBPos:=pos(#$1C#$0D,rfm);
-
-    HL7_Msg_Type:=CheckMsgType(rfm2);
-
-    if hmtQueryMsg in HL7_Msg_Type then
+    PerlRegEx.Replace;//Replace仅用于更新RFM.必须在成功调用Match或MatchAgain后,才能调用Replace。
+    rfm:=PerlRegEx.Subject;
+    while PerlRegEx.MatchAgain do
     begin
-      ls11:=TStringList.Create;
-      ExtractStrings([#$D],[],Pchar(rfm2),ls11);
-
-      for  k:=0  to ls11.Count-1 do
-      begin
-        if uppercase(copy(trim(ls11[k]),1,4))='MSH|' then
-        begin
-          ls22:=StrToList(ls11[k],'|');
-          if ls22.Count>9 then Message_Control_ID:=ls22[9];
-          ls22.Free;
-        end;
-
-        if uppercase(copy(trim(ls11[k]),1,4))='ORC|' then
-        begin
-          ls33:=StrToList(ls11[k],'|');
-          if ls33.Count>3 then Sample_ID:=ls33[3];
-          ls33.Free;
-        end;
-      end;
-      ls11.Free;
-
-      //进样模式（Take Mode）: O-开放、A-自动、C-封闭//OBX|1|IS|08001^Take Mode^99MRC||A||||||F'+#$0D+
-      //血样模式（Blood Mode）: W-全血、P-预稀释、B-体液、Q-质控
-      //测量模式（Test Mode）: CBC、CBC+DIFF、CBC+RET、CBC+NRBC、CBC+DIFF+RET、CBC+DIFF+NRBC、CBC+DIFF+RET+NRBC、RET、CRP、CBC+DIFF+CRP
-      ORF:=#$0B+
-           'MSH|^~\&|||||||ORR^O02|1|P|2.3.1'+#$0D+//一定要2.3.1（与收到的MSH一致）   
-           'MSA|AA|'+Message_Control_ID+#$0D+
-           'ORC|AF|'+Sample_ID+#$0D+
-           'OBX|1|IS|08002^Blood Mode^99MRC||W||||||F'+#$0D+
-           'OBX|2|IS|08003^Test Mode^99MRC||CBC+DIFF||||||F'+#$0D+
-           #$1C#$0D;
-      if not if_test then Socket.SendText(ORF);
-      if length(memo1.Lines.Text)>=1000000 then memo1.Lines.Clear;//memo在win98只能接受64K个字符,在win2000无限制
-      memo1.Lines.Add(ORF);
-    end;
-
-    if hmtQCResult in HL7_Msg_Type then
-    begin
-      ls41:=TStringList.Create;
-      ExtractStrings([#$D],[],Pchar(rfm2),ls41);
-
-      for  m:=0  to ls41.Count-1 do
-      begin
-        if uppercase(copy(trim(ls41[m]),1,4))='MSH|' then
-        begin
-          ls42:=StrToList(ls41[m],'|');
-          if ls42.Count>9 then Message_Control_ID:=ls42[9];
-          ls42.Free;
-          
-          ACK_MSH:=ls41[m];
-        end;
-        
-        if uppercase(copy(trim(ls41[m]),1,4))='OBR|' then
-        begin
-          ls43:=StrToList(ls41[m],'|');
-          if ls43.Count>3 then DtlStr:=ls43[3];
-          if ls43.Count>20 then sValue:=ls43[20];
-          if ls43.Count>13 then
-          begin
-            if pos('低值',ls43[13])>0 then SpecNo:='9997'
-              else if pos('高值',ls43[13])>0 then SpecNo:='9999'
-                else SpecNo:='9998';
-          end;
-          if ls43.Count>7 then CheckDate:=copy(ls43[7],1,4)+'-'+copy(ls43[7],5,2)+'-'+copy(ls43[7],7,2)+' '+copy(ls43[7],9,2)+ifThen(copy(ls43[7],9,2)<>'',':')+copy(ls43[7],11,2);
-          ls43.Free;
-          
-          ReceiveItemInfo:=VarArrayCreate([0,0],varVariant);
-          ReceiveItemInfo[0]:=VarArrayof([DtlStr,sValue,'','']);
-          if bRegister then
-          begin
-            FInts :=CreateOleObject('Data2LisSvr.Data2Lis');
-            FInts.fData2Lis(ReceiveItemInfo,(SpecNo),CheckDate,
-              (''),(SpecType),(''),(EquipChar),
-              (''),'',(LisFormCaption),(ConnectString),
-              (QuaContSpecNoG),(QuaContSpecNo),(QuaContSpecNoD),'',
-              ifRecLog,true,'',
-              '',
-              EquipUnid,
-              '','','','',
-              -1,-1,-1,-1,
-              -1,-1,-1,-1,
-              false,false,false,false);
-            if not VarIsEmpty(FInts) then FInts:= unAssigned;
-          end;
-        end;
-      end;
-      ls41.Free;
-    end;
-        
-    if hmtSampleResult in HL7_Msg_Type then
-    begin
-      ls:=TStringList.Create;
-      ExtractStrings([#$D],[],Pchar(rfm2),ls);
-
-      SpecNo:='';
-
-      r_Barcode:='';
-      r_patientname:='';
-      r_sex:='';
-      r_age:='';
-      r_deptname:='';//申请科室
-      r_check_doctor:='';//申请医生
-      r_report_date:='';//申请时间
-      r_his_unid:='';
-
-      ReceiveItemInfo:=VarArrayCreate([0,ls.Count-1],varVariant);
-
-      for  i:=0  to ls.Count-1 do
-      begin
-        if uppercase(copy(trim(ls[i]),1,4))='MSH|' then
-        begin
-          ls5:=StrToList(ls[i],'|');
-          if ls5.Count>9 then Message_Control_ID:=ls5[9];
-          ls5.Free;
-          
-          ACK_MSH:=ls[i];
-        end;
-
-        DtlStr:='';
-        sValue:='';
-        if uppercase(copy(trim(ls[i]),1,4))='PID|' then
-        begin
-          if Line_Patient_ID='PID' then SpecNo:=ls[i];
-          ls9:=StrToList(ls[i],'|');
-          if ls9.Count>5 then r_patientname:=ls9[5];
-          if ls9.Count>8 then r_sex:=ls9[8];
-          if ls9.Count>7 then r_age:=ls9[7];
-
-          if ls9.Count>26 then//阴道分泌物检测RT-F600
-          begin
-            DtlStr:='结果分析提示';
-            sValue:=ls9[26];
-          end;
-
-          ls9.Free;
-        end;
-
-        if uppercase(copy(trim(ls[i]),1,4))='OBR|' then
-        begin
-          if Line_Patient_ID='OBR' then SpecNo:=ls[i];
-
-          ls3:=StrToList(ls[i],'|');
-          if ls3.Count>7 then CheckDate:=copy(ls3[7],1,4)+'-'+copy(ls3[7],5,2)+'-'+copy(ls3[7],7,2)+' '+copy(ls3[7],9,2)+ifThen(copy(ls3[7],9,2)<>'',':')+copy(ls3[7],11,2);
-          if(SpecType='OBR第15位')and(ls3.Count>15) then SpecType:=ls3[15];
-          if ls3.Count>16 then r_check_doctor:=ls3[16];//申请医生
-          ls3.Free;
-        end;
-
-        sHistogramFile:='';
-        if uppercase(copy(trim(ls[i]),1,4))='OBX|' then
-        begin
-          ls2:=StrToList(ls[i],'|');
-
-          if ls2.Count>NoDtlStr then DtlStr:=ls2[NoDtlStr];
-
-          if(ls2.Count>5)and(ls2[2]<>'ED')then//ls2[2]='ED'表示图片结果
-          begin
-            sValue:=ls2[5];
-            sValue:=StringReplace(sValue,'↑','',[rfReplaceAll, rfIgnoreCase]);//飞测FS-205
-            sValue:=StringReplace(sValue,'↓','',[rfReplaceAll, rfIgnoreCase]);//飞测FS-205
-            sValue:=StringReplace(sValue,'mg/L','',[rfReplaceAll, rfIgnoreCase]);//EU-5300
-            sValue:=StringReplace(sValue,'mmol/L','',[rfReplaceAll, rfIgnoreCase]);//EU-5300
-
-            //FUS2000
-            ls7:=StrToList(sValue,'^');
-            if ls7.Count>2 then sValue:=trim(ls7[1]+' '+ls7[2]);
-            ls7.Free;
-
-            //iFlash-3000.例如,结果为【2.05,无反应性】,只取逗号前的2.05
-            if Discard_Qualitative and(pos(',',sValue)>0) then sValue:=copy(sValue,1,pos(',',sValue)-1);
-
-            //迈瑞EU-5300 begin
-            if(pos(':\E\',sValue)>0)and(rightstr(sValue,4)='.JPG')then//表示结果是图片路径
-            begin
-              sHistogramFile:=StringReplace(sValue,'\E\','\',[rfReplaceAll]);
-              sValue:='';
-            end;
-            //迈瑞EU-5300 end
-          end;
-
-          //图片处理 strat
-          if(ls2[2]='ED')and(ls2.Count>5)and(trim(ls2[5])<>'') then//ls2[2]='ED'表示图片内容,ls2[5]表示图片内容
-          begin
-            //DH36:ls2[5]为^Image^PNG^Base64^iVBORw0KGgoAAAANSUhEUgAAAJw.........
-            //BC10:ls2[5]为^Image^BMP^Base64^Qk0GcAAAAAAAAL.........
-            ls4:=StrToList(ls2[5],'^');
-            if ls4.Count>4 then
-            begin
-              sHistogramFile:=DtlStr+'.'+ls4[2];
-
-              try
-                sHistogramTemp:=IdDecoderMIME1.DecodeString(ls4[4]);
-              except
-                sHistogramFile:='';
-              end;
-            end;
-            ls4.Free;
-
-            if pos('^',ls2[5])<=0 then//FUS-2000、GMD-S600的ls2[5]都是图片数据,没有^
-            begin
-              sHistogramFile:=DtlStr+ifThen(leftstr(ls2[5],4)='/9j/','.jpg','.bmp');//参见文档【MUS系列全自动尿液分析系统接口规范20220210.pdf】
-
-              try
-                //FUS2000的ls2[5]实际上可能包含多张图片,用424D分隔,424D在sHistogramTemp中
-                //但LIS不支持单个项目多张图片的保存与显示,刚好下面的处理方式也只会识别一张图片,故懒得拆分处理了
-                sHistogramTemp:=IdDecoderMIME1.DecodeString(ls2[5]);
-              except
-                sHistogramFile:='';
-              end;
-            end;
-
-            strList:=TStringlist.Create;
-            try
-              strList.Add(sHistogramTemp);
-              strList.SaveToFile(sHistogramFile);
-            finally
-              strList.Free;
-            end;
-          end;
-          //图片处理 stop
-
-          ls2.Free;
-        end;
-        ReceiveItemInfo[i]:=VarArrayof([DtlStr,sValue,'',sHistogramFile]);
-
-        //处理重做结果Start
-        if BS300_Rerun then
-        begin
-          for  j:=0  to i-1 do
-          begin
-            if (DtlStr<>'')and(ReceiveItemInfo[j][0]=DtlStr) then ReceiveItemInfo[j]:=VarArrayof(['','','','']);
-          end;
-        end;
-        //处理重做结果End
-      end;
-        
-      ls.Free;
-
-      //联机号begin
-      ls8:=StrToList(SpecNo,'|');
-      if ls8.Count>No_Patient_ID then SpecNo:=ls8[No_Patient_ID];
-      ls8.Free;
-      SpecNo:=trim(StringReplace(SpecNo,'^R','',[rfReplaceAll, rfIgnoreCase]));//KLite8
-      r_Barcode:=SpecNo;
-      if SpecNo='' then SpecNo:=formatdatetime('nnss',now);
-      SpecNo:=rightstr('0000'+SpecNo,4);
-      //联机号end
-
-      //通过r_Barcode(从结果消息中获取的条码号)获取HIS/PEIS的患者基本信息 begin
-      HLIB:=LOADLIBRARY(PChar(DuplexDll));
-      IF HLIB<>0 THEN
-      BEGIN
-        @DLLFUNC:=GETPROCADDRESS(HLIB,'GetRequestInfo');
-        IF @DLLFUNC<>NIL THEN
-        BEGIN
-          pRequestInfo:=DLLFUNC(r_Barcode,False);
-        END;
-      END;
-      FREELIBRARY(HLIB);
-
-      aJson:=SO(pRequestInfo);
-      if aJson['患者姓名']<>nil then r_patientname:=aJson['患者姓名'].AsString;
-      if aJson['患者性别']<>nil then r_sex:=aJson['患者性别'].AsString;
-      if aJson['患者年龄']<>nil then r_age:=aJson['患者年龄'].AsString;
-      if aJson['申请科室']<>nil then r_deptname:=aJson['申请科室'].AsString;
-      if aJson['申请医生']<>nil then r_check_doctor:=aJson['申请医生'].AsString;
-      if aJson['申请日期']<>nil then r_report_date:=aJson['申请日期'].AsString;
-      if aJson['外部系统唯一编号']<>nil then r_his_unid:=aJson['外部系统唯一编号'].AsString;
-      aJson:=nil;
-      //通过r_Barcode(从结果消息中获取的条码号)获取HIS/PEIS的患者基本信息 end
-
-      if bRegister then
-      begin
-        FInts :=CreateOleObject('Data2LisSvr.Data2Lis');
-        FInts.fData2Lis(ReceiveItemInfo,(SpecNo),CheckDate,
-          (GroupName),(SpecType),(SpecStatus),(EquipChar),
-          (CombinID),r_patientname+'{!@#}'+r_sex+'{!@#}{!@#}'+r_age+'{!@#}{!@#}'+r_deptname+'{!@#}'+r_check_doctor+'{!@#}{!@#}{!@#}{!@#}{!@#}{!@#}'+r_report_date+'{!@#}'+r_his_unid,(LisFormCaption),(ConnectString),
-          (QuaContSpecNoG),(QuaContSpecNo),(QuaContSpecNoD),'',
-          ifRecLog,true,'常规',
-          r_Barcode,
-          EquipUnid,
-          '','','','',
-          -1,-1,-1,-1,
-          -1,-1,-1,-1,
-          false,false,false,false);
-        if not VarIsEmpty(FInts) then FInts:= unAssigned;
-      end;
-    end;
-
-    if (hmtResultMsg in HL7_Msg_Type)and ifKLite8 then
-    begin
-      ACK_MSH:=TRIM(ACK_MSH);
-      ACK_MSH:=STRINGREPLACE(ACK_MSH,'|ORU^R01|','|'+CM_Category_Message+'|',[rfIgnoreCase]);
-      ACK_MSH:=STRINGREPLACE(ACK_MSH,'|ORU^R01^ORU_R01|','|'+CM_Category_Message+'|',[rfIgnoreCase]);//飞测FS205
-      ACK:=#$0B+
-           ACK_MSH+#$0D+
-           'MSA|AA|'+Message_Control_ID+'||||0|'+#$0D+
-           #$1C#$0D;
-      if not if_test then Socket.SendText(ACK);
-      //Socket.SendText(#$0B+'MSH|^~$&|||||||'+CM_Category_Message+'|1|P|2.4||||0||ASCII|||'+#$0D+'MSA|AA|'+Message_Control_ID+'|message accepted|||0|'+#$0D#$1C#$0D);
+      PerlRegEx.Replace;//Replace仅用于更新RFM
+      rfm:=PerlRegEx.Subject;
     end;
   end;
+  FreeAndNil(PerlRegEx);
 end;
 
 procedure TfrmMain.ServerSocket1ClientConnect(Sender: TObject;
@@ -858,6 +530,352 @@ begin
     end;
   end;
   ls.Free;
+end;
+
+procedure TfrmMain.PerlRegExAfterMatch(Sender: TObject);
+var
+  SpecNo:string;
+  rfm2:string;
+  sValue:string;
+  FInts:OleVariant;
+  ReceiveItemInfo:OleVariant;
+  i,j,k,m:integer;
+  ls,ls2,ls3,ls4,ls5,ls7,ls8,ls9,ls11,ls22,ls33,ls41,ls42,ls43:tstrings;
+  DtlStr:string;
+  CheckDate:string;
+  sHistogramTemp:string;
+  sHistogramFile:string;
+  strList:TStrings;
+  Message_Control_ID:string;
+  Sample_ID:string;
+  ORF:String;
+
+  r_Barcode:String;//从结果消息中获取的条码号
+  r_patientname:String;
+  r_sex:String;
+  r_age:String;
+  r_deptname:String;//申请科室
+  r_check_doctor:String;//申请医生
+  r_report_date:String;//申请时间
+  r_his_unid:String;
+
+  HL7_Msg_Type:THL7_Msg_Type;
+
+  HLIB:THANDLE;
+  DLLFUNC: function(const ABarcode:ShortString;AifShowMsgDlg:Boolean):PChar; stdcall;
+  pRequestInfo:PChar;
+  aJson: ISuperObject;
+
+  ACK_MSH:String;
+  ACK:String;
+begin
+  rfm2:=(Sender as TPerlRegEx).MatchedText;
+  
+  HL7_Msg_Type:=CheckMsgType(rfm2);
+
+  if hmtQueryMsg in HL7_Msg_Type then
+  begin
+    ls11:=TStringList.Create;
+    ExtractStrings([#$D],[],Pchar(rfm2),ls11);
+
+    for  k:=0  to ls11.Count-1 do
+    begin
+      if uppercase(copy(trim(ls11[k]),1,4))='MSH|' then
+      begin
+        ls22:=StrToList(ls11[k],'|');
+        if ls22.Count>9 then Message_Control_ID:=ls22[9];
+        ls22.Free;
+      end;
+
+      if uppercase(copy(trim(ls11[k]),1,4))='ORC|' then
+      begin
+        ls33:=StrToList(ls11[k],'|');
+        if ls33.Count>3 then Sample_ID:=ls33[3];
+        ls33.Free;
+      end;
+    end;
+    ls11.Free;
+
+    //进样模式（Take Mode）: O-开放、A-自动、C-封闭//OBX|1|IS|08001^Take Mode^99MRC||A||||||F'+#$0D+
+    //血样模式（Blood Mode）: W-全血、P-预稀释、B-体液、Q-质控
+    //测量模式（Test Mode）: CBC、CBC+DIFF、CBC+RET、CBC+NRBC、CBC+DIFF+RET、CBC+DIFF+NRBC、CBC+DIFF+RET+NRBC、RET、CRP、CBC+DIFF+CRP
+    ORF:=#$0B+
+         'MSH|^~\&|||||||ORR^O02|1|P|2.3.1'+#$0D+//一定要2.3.1（与收到的MSH一致）   
+         'MSA|AA|'+Message_Control_ID+#$0D+
+         'ORC|AF|'+Sample_ID+#$0D+
+         'OBX|1|IS|08002^Blood Mode^99MRC||W||||||F'+#$0D+
+         'OBX|2|IS|08003^Test Mode^99MRC||CBC+DIFF||||||F'+#$0D+
+         #$1C#$0D;
+    if not if_test then begin if ifSocketClient then ClientSocket1.Socket.SendText(ORF) else ServerSocket1.Socket.SendText(ORF);end;
+    if length(memo1.Lines.Text)>=1000000 then memo1.Lines.Clear;//memo在win98只能接受64K个字符,在win2000无限制
+    memo1.Lines.Add(ORF);
+  end;
+
+  if hmtQCResult in HL7_Msg_Type then
+  begin
+    ls41:=TStringList.Create;
+    ExtractStrings([#$D],[],Pchar(rfm2),ls41);
+
+    for  m:=0  to ls41.Count-1 do
+    begin
+      if uppercase(copy(trim(ls41[m]),1,4))='MSH|' then
+      begin
+        ls42:=StrToList(ls41[m],'|');
+        if ls42.Count>9 then Message_Control_ID:=ls42[9];
+        ls42.Free;
+          
+        ACK_MSH:=ls41[m];
+      end;
+        
+      if uppercase(copy(trim(ls41[m]),1,4))='OBR|' then
+      begin
+        ls43:=StrToList(ls41[m],'|');
+        if ls43.Count>3 then DtlStr:=ls43[3];
+        if ls43.Count>20 then sValue:=ls43[20];
+        if ls43.Count>13 then
+        begin
+          if pos('低值',ls43[13])>0 then SpecNo:='9997'
+            else if pos('高值',ls43[13])>0 then SpecNo:='9999'
+              else SpecNo:='9998';
+        end;
+        if ls43.Count>7 then CheckDate:=copy(ls43[7],1,4)+'-'+copy(ls43[7],5,2)+'-'+copy(ls43[7],7,2)+' '+copy(ls43[7],9,2)+ifThen(copy(ls43[7],9,2)<>'',':')+copy(ls43[7],11,2);
+        ls43.Free;
+          
+        ReceiveItemInfo:=VarArrayCreate([0,0],varVariant);
+        ReceiveItemInfo[0]:=VarArrayof([DtlStr,sValue,'','']);
+        if bRegister then
+        begin
+          FInts :=CreateOleObject('Data2LisSvr.Data2Lis');
+          FInts.fData2Lis(ReceiveItemInfo,(SpecNo),CheckDate,
+            (''),(SpecType),(''),(EquipChar),
+            (''),'',(LisFormCaption),(ConnectString),
+            (QuaContSpecNoG),(QuaContSpecNo),(QuaContSpecNoD),'',
+            ifRecLog,true,'',
+            '',
+            EquipUnid,
+            '','','','',
+            -1,-1,-1,-1,
+            -1,-1,-1,-1,
+            false,false,false,false);
+          if not VarIsEmpty(FInts) then FInts:= unAssigned;
+        end;
+      end;
+    end;
+    ls41.Free;
+  end;
+        
+  if hmtSampleResult in HL7_Msg_Type then
+  begin
+    ls:=TStringList.Create;
+    ExtractStrings([#$D],[],Pchar(rfm2),ls);
+
+    SpecNo:='';
+
+    r_Barcode:='';
+    r_patientname:='';
+    r_sex:='';
+    r_age:='';
+    r_deptname:='';//申请科室
+    r_check_doctor:='';//申请医生
+    r_report_date:='';//申请时间
+    r_his_unid:='';
+
+    ReceiveItemInfo:=VarArrayCreate([0,ls.Count-1],varVariant);
+
+    for  i:=0  to ls.Count-1 do
+    begin
+      if uppercase(copy(trim(ls[i]),1,4))='MSH|' then
+      begin
+        ls5:=StrToList(ls[i],'|');
+        if ls5.Count>9 then Message_Control_ID:=ls5[9];
+        ls5.Free;
+          
+        ACK_MSH:=ls[i];
+      end;
+
+      DtlStr:='';
+      sValue:='';
+      if uppercase(copy(trim(ls[i]),1,4))='PID|' then
+      begin
+        if Line_Patient_ID='PID' then SpecNo:=ls[i];
+        ls9:=StrToList(ls[i],'|');
+        if ls9.Count>5 then r_patientname:=ls9[5];
+        if ls9.Count>8 then r_sex:=ls9[8];
+        if ls9.Count>7 then r_age:=ls9[7];
+
+        if ls9.Count>26 then//阴道分泌物检测RT-F600
+        begin
+          DtlStr:='结果分析提示';
+          sValue:=ls9[26];
+        end;
+
+        ls9.Free;
+      end;
+
+      if uppercase(copy(trim(ls[i]),1,4))='OBR|' then
+      begin
+        if Line_Patient_ID='OBR' then SpecNo:=ls[i];
+
+        ls3:=StrToList(ls[i],'|');
+        if ls3.Count>7 then CheckDate:=copy(ls3[7],1,4)+'-'+copy(ls3[7],5,2)+'-'+copy(ls3[7],7,2)+' '+copy(ls3[7],9,2)+ifThen(copy(ls3[7],9,2)<>'',':')+copy(ls3[7],11,2);
+        if(SpecType='OBR第15位')and(ls3.Count>15) then SpecType:=ls3[15];
+        if ls3.Count>16 then r_check_doctor:=ls3[16];//申请医生
+        ls3.Free;
+      end;
+
+      sHistogramFile:='';
+      if uppercase(copy(trim(ls[i]),1,4))='OBX|' then
+      begin
+        ls2:=StrToList(ls[i],'|');
+
+        if ls2.Count>NoDtlStr then DtlStr:=ls2[NoDtlStr];
+
+        if(ls2.Count>5)and(ls2[2]<>'ED')then//ls2[2]='ED'表示图片结果
+        begin
+          sValue:=ls2[5];
+          sValue:=StringReplace(sValue,'↑','',[rfReplaceAll, rfIgnoreCase]);//飞测FS-205
+          sValue:=StringReplace(sValue,'↓','',[rfReplaceAll, rfIgnoreCase]);//飞测FS-205
+          sValue:=StringReplace(sValue,'mg/L','',[rfReplaceAll, rfIgnoreCase]);//EU-5300
+          sValue:=StringReplace(sValue,'mmol/L','',[rfReplaceAll, rfIgnoreCase]);//EU-5300
+
+          //FUS2000
+          ls7:=StrToList(sValue,'^');
+          if ls7.Count>2 then sValue:=trim(ls7[1]+' '+ls7[2]);
+          ls7.Free;
+
+          //iFlash-3000.例如,结果为【2.05,无反应性】,只取逗号前的2.05
+          if Discard_Qualitative and(pos(',',sValue)>0) then sValue:=copy(sValue,1,pos(',',sValue)-1);
+
+          //迈瑞EU-5300 begin
+          if(pos(':\E\',sValue)>0)and(rightstr(sValue,4)='.JPG')then//表示结果是图片路径
+          begin
+            sHistogramFile:=StringReplace(sValue,'\E\','\',[rfReplaceAll]);
+            sValue:='';
+          end;
+          //迈瑞EU-5300 end
+        end;
+
+        //图片处理 strat
+        if(ls2[2]='ED')and(ls2.Count>5)and(trim(ls2[5])<>'') then//ls2[2]='ED'表示图片内容,ls2[5]表示图片内容
+        begin
+          //DH36:ls2[5]为^Image^PNG^Base64^iVBORw0KGgoAAAANSUhEUgAAAJw.........
+          //BC10:ls2[5]为^Image^BMP^Base64^Qk0GcAAAAAAAAL.........
+          ls4:=StrToList(ls2[5],'^');
+          if ls4.Count>4 then
+          begin
+            sHistogramFile:=DtlStr+'.'+ls4[2];
+
+            try
+              sHistogramTemp:=IdDecoderMIME1.DecodeString(ls4[4]);
+            except
+              sHistogramFile:='';
+            end;
+          end;
+          ls4.Free;
+
+          if pos('^',ls2[5])<=0 then//FUS-2000、GMD-S600的ls2[5]都是图片数据,没有^
+          begin
+            sHistogramFile:=DtlStr+ifThen(leftstr(ls2[5],4)='/9j/','.jpg','.bmp');//参见文档【MUS系列全自动尿液分析系统接口规范20220210.pdf】
+
+            try
+              //FUS2000的ls2[5]实际上可能包含多张图片,用424D分隔,424D在sHistogramTemp中
+              //但LIS不支持单个项目多张图片的保存与显示,刚好下面的处理方式也只会识别一张图片,故懒得拆分处理了
+              sHistogramTemp:=IdDecoderMIME1.DecodeString(ls2[5]);
+            except
+              sHistogramFile:='';
+            end;
+          end;
+
+          strList:=TStringlist.Create;
+          try
+            strList.Add(sHistogramTemp);
+            strList.SaveToFile(sHistogramFile);
+          finally
+            strList.Free;
+          end;
+        end;
+        //图片处理 stop
+
+        ls2.Free;
+      end;
+      ReceiveItemInfo[i]:=VarArrayof([DtlStr,sValue,'',sHistogramFile]);
+
+      //处理重做结果Start
+      if BS300_Rerun then
+      begin
+        for  j:=0  to i-1 do
+        begin
+          if (DtlStr<>'')and(ReceiveItemInfo[j][0]=DtlStr) then ReceiveItemInfo[j]:=VarArrayof(['','','','']);
+        end;
+      end;
+      //处理重做结果End
+    end;
+        
+    ls.Free;
+
+    //联机号begin
+    ls8:=StrToList(SpecNo,'|');
+    if ls8.Count>No_Patient_ID then SpecNo:=ls8[No_Patient_ID];
+    ls8.Free;
+    SpecNo:=trim(StringReplace(SpecNo,'^R','',[rfReplaceAll, rfIgnoreCase]));//KLite8
+    r_Barcode:=SpecNo;
+    if SpecNo='' then SpecNo:=formatdatetime('nnss',now);
+    SpecNo:=rightstr('0000'+SpecNo,4);
+    //联机号end
+
+    //通过r_Barcode(从结果消息中获取的条码号)获取HIS/PEIS的患者基本信息 begin
+    HLIB:=LOADLIBRARY(PChar(DuplexDll));
+    IF HLIB<>0 THEN
+    BEGIN
+      @DLLFUNC:=GETPROCADDRESS(HLIB,'GetRequestInfo');
+      IF @DLLFUNC<>NIL THEN
+      BEGIN
+        pRequestInfo:=DLLFUNC(r_Barcode,False);
+      END;
+    END;
+    FREELIBRARY(HLIB);
+
+    aJson:=SO(pRequestInfo);
+    if aJson['患者姓名']<>nil then r_patientname:=aJson['患者姓名'].AsString;
+    if aJson['患者性别']<>nil then r_sex:=aJson['患者性别'].AsString;
+    if aJson['患者年龄']<>nil then r_age:=aJson['患者年龄'].AsString;
+    if aJson['申请科室']<>nil then r_deptname:=aJson['申请科室'].AsString;
+    if aJson['申请医生']<>nil then r_check_doctor:=aJson['申请医生'].AsString;
+    if aJson['申请日期']<>nil then r_report_date:=aJson['申请日期'].AsString;
+    if aJson['外部系统唯一编号']<>nil then r_his_unid:=aJson['外部系统唯一编号'].AsString;
+    aJson:=nil;
+    //通过r_Barcode(从结果消息中获取的条码号)获取HIS/PEIS的患者基本信息 end
+
+    if bRegister then
+    begin
+      FInts :=CreateOleObject('Data2LisSvr.Data2Lis');
+      FInts.fData2Lis(ReceiveItemInfo,(SpecNo),CheckDate,
+        (GroupName),(SpecType),(SpecStatus),(EquipChar),
+        (CombinID),r_patientname+'{!@#}'+r_sex+'{!@#}{!@#}'+r_age+'{!@#}{!@#}'+r_deptname+'{!@#}'+r_check_doctor+'{!@#}{!@#}{!@#}{!@#}{!@#}{!@#}'+r_report_date+'{!@#}'+r_his_unid,(LisFormCaption),(ConnectString),
+        (QuaContSpecNoG),(QuaContSpecNo),(QuaContSpecNoD),'',
+        ifRecLog,true,'常规',
+        r_Barcode,
+        EquipUnid,
+        '','','','',
+        -1,-1,-1,-1,
+        -1,-1,-1,-1,
+        false,false,false,false);
+      if not VarIsEmpty(FInts) then FInts:= unAssigned;
+    end;
+  end;
+
+  if (hmtResultMsg in HL7_Msg_Type)and ifKLite8 then
+  begin
+    ACK_MSH:=TRIM(ACK_MSH);
+    ACK_MSH:=STRINGREPLACE(ACK_MSH,'|ORU^R01|','|'+CM_Category_Message+'|',[rfIgnoreCase]);
+    ACK_MSH:=STRINGREPLACE(ACK_MSH,'|ORU^R01^ORU_R01|','|'+CM_Category_Message+'|',[rfIgnoreCase]);//飞测FS205
+    ACK:=#$0B+
+         ACK_MSH+#$0D+
+         'MSA|AA|'+Message_Control_ID+'||||0|'+#$0D+
+         #$1C#$0D;
+    if not if_test then begin if ifSocketClient then ClientSocket1.Socket.SendText(ACK) else ServerSocket1.Socket.SendText(ACK);end;
+    //Socket.SendText(#$0B+'MSH|^~$&|||||||'+CM_Category_Message+'|1|P|2.4||||0||ASCII|||'+#$0D+'MSA|AA|'+Message_Control_ID+'|message accepted|||0|'+#$0D#$1C#$0D);
+  end;
 end;
 
 initialization

@@ -4,7 +4,8 @@ uses
   Forms,
   UfrmMain in 'UfrmMain.pas' {frmMain},
   UCommFunction in 'UCommFunction.pas',
-  superobject in 'superobject.pas';
+  superobject in 'superobject.pas',
+  PerlRegEx in 'PerlRegEx.pas';
 
 {$R *.res}
 
