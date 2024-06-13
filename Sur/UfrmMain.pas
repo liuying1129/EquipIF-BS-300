@@ -420,6 +420,10 @@ begin
   delete(rfm,1,SBPos-1);//删除垃圾数据,避免RFM无限增长
 
   PerlRegEx:=TPerlRegEx.Create;
+  //[]：正则表达式元字符，表示区间条件，匹配单个字符
+  //\s：正则表达式元字符，匹配任何空白字符，包括空格、制表符、换页符等等
+  //\S：正则表达式元字符，匹配任何非空白字符
+  //*：正则表达式元字符，匹配前面的子表达式零次或多次
   PerlRegEx.RegEx:=#$0B'[\s\S]*'#$1C#$0D;
   PerlRegEx.Options:=PerlRegEx.Options+[preUnGreedy];//非贪婪模式,只匹配到第1次#$B开头及第1次$1C#$0D结尾的内容.否则,匹配到第1次#$B开头及最后1次$1C#$0D结尾的内容
   PerlRegEx.OnMatch:=PerlRegExAfterMatch;//1个完整HL7消息
