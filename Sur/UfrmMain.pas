@@ -126,6 +126,7 @@ var
   bRegister:boolean;
 
   if_test:boolean;//是否测试
+  SocketForSend:TCustomWinSocket;//该Socket用于发送
 
 {$R *.dfm}
 
@@ -410,6 +411,8 @@ begin
   if length(memo1.Lines.Text)>=1000000 then memo1.Lines.Clear;//memo在win98只能接受64K个字符,在win2000无限制
   memo1.Lines.Add(Str);
 
+  SocketForSend:=Socket;//该Socket用于在事件PerlRegExAfterMatch中发送指令
+
   rfm:=rfm+Str;
   
   SBPos:=pos(#$0B,rfm);
@@ -606,7 +609,7 @@ begin
          'OBX|1|IS|08002^Blood Mode^99MRC||W||||||F'+#$0D+
          'OBX|2|IS|08003^Test Mode^99MRC||CBC+DIFF||||||F'+#$0D+
          #$1C#$0D;
-    if not if_test then begin if ifSocketClient then ClientSocket1.Socket.SendText(ORF) else ServerSocket1.Socket.SendText(ORF);end;
+    if not if_test then SocketForSend.SendText(ORF);
     if length(memo1.Lines.Text)>=1000000 then memo1.Lines.Clear;//memo在win98只能接受64K个字符,在win2000无限制
     memo1.Lines.Add(ORF);
   end;
@@ -873,7 +876,7 @@ begin
          ACK_MSH+#$0D+
          'MSA|AA|'+Message_Control_ID+'||||0|'+#$0D+
          #$1C#$0D;
-    if not if_test then begin if ifSocketClient then ClientSocket1.Socket.SendText(ACK) else ServerSocket1.Socket.SendText(ACK);end;
+    if not if_test then SocketForSend.SendText(ACK);
     //Socket.SendText(#$0B+'MSH|^~$&|||||||'+CM_Category_Message+'|1|P|2.4||||0||ASCII|||'+#$0D+'MSA|AA|'+Message_Control_ID+'|message accepted|||0|'+#$0D#$1C#$0D);
   end;
 end;
