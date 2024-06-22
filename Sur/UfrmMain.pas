@@ -708,7 +708,7 @@ begin
         ls9:=StrToList(ls[i],'|');
         if ls9.Count>5 then r_patientname:=ls9[5];
         if ls9.Count>8 then r_sex:=ls9[8];
-        if ls9.Count>7 then r_age:=ls9[7];
+        //if ls9.Count>7 then r_age:=ls9[7];//该字段在HL7中并非年龄,而是出生日期
 
         if ls9.Count>26 then//阴道分泌物检测RT-F600
         begin
